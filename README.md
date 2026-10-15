@@ -25,7 +25,7 @@ macOS 上文中的 Ctrl 均为 Command；F 键在 Mac 键盘上可能需要按�
 ## 安装
 
 从 [Releases](https://github.com/wangchaozhi/SnapPin/releases) 下载 `SnapPin-x.y.z-windows-x64.zip`，解压后运行 `SnapPin.exe`。
-新版本发布后程序会提示更新，确认后自动下载、替换并重启。
+新版本发布后程序会提示更新，确认后自动下载、替换并重启（三个平台都支持，重启后会提示更新结果）。
 
 macOS（14 及以上）下载 `SnapPin-x.y.z-macos-universal.zip`，解压后把 `SnapPin.app` 拖到“应用程序”。
 安装包用固定的自签名证书签名（不是苹果开发者证书），第一次打开需要在“系统设置 > 隐私与安全性”里允许；之后升级时已授予的权限保持有效。程序需要两项权限（系统设置 > 隐私与安全性）：
@@ -33,9 +33,9 @@ macOS（14 及以上）下载 `SnapPin-x.y.z-macos-universal.zip`，解压后把
 - **屏幕录制**：截屏必需，没有时只能截到桌面壁纸
 - **辅助功能**：识别窗口内的控件、长截图时接管滚动；不授权时这两项退化为只识别窗口、直接滚动
 
-macOS 版暂不支持自动安装更新，有新版本时会打开发布页。
+自动更新会校验新版本的签名与当前程序一致后再替换 `SnapPin.app`，失败时保留原版本；`.app` 所在目录没有写权限（或直接从“下载”里打开）时改为打开发布页。
 
-Linux 下载 `SnapPin-x.y.z-linux-x86_64.AppImage`，`chmod +x` 后直接运行。X11 和 Wayland 会话的支持程度不同：
+Linux 下载 `SnapPin-x.y.z-linux-x86_64.AppImage`，`chmod +x` 后直接运行。自动更新会原地替换这个 AppImage 文件（文件名不变，快捷键命令继续有效），放在没有写权限的目录时改为打开发布页。X11 和 Wayland 会话的支持程度不同：
 
 | | X11 | Wayland |
 |---|---|---|

@@ -18,9 +18,9 @@ struct ReleaseInfo {
     QByteArray sha256; // GitHub 提供的资产摘要（十六进制），可能为空
 };
 
-// 自动更新：从 GitHub Releases 获取最新版本，下载安装包并替换当前目录（macOS 为 .app）后重启。
-// 只有发布包（Windows 在程序目录、macOS 在 Contents/Resources 中有 snappin.portable 标记）才会自动安装，
-// 开发构建和 Linux 只打开发布页
+// 自动更新：从 GitHub Releases 获取最新版本，下载安装包并替换当前程序（Windows 为安装目录，macOS 为 .app，Linux 为 AppImage 文件）后重启。
+// 只有发布包才会自动安装：Windows 程序目录、macOS 的 Contents/Resources 中有 snappin.portable 标记，
+// Linux 以 AppImage 运行；开发构建只打开发布页
 class Updater : public QObject {
     Q_OBJECT
 public:
@@ -36,7 +36,8 @@ private:
     void handleRelease(QNetworkReply* reply, bool interactive);
     void prompt(const ReleaseInfo& info);
     void download(const ReleaseInfo& info);
-    void install(const QString& zipPath);
+    void install(const QString& packagePath);
+    void reportLastInstall();
     static bool canSelfInstall();
 
     QNetworkAccessManager m_net;

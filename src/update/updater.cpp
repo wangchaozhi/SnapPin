@@ -17,9 +17,11 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
 
 namespace {
 
+constexpr int kReportDelayMs = 3000;
 const char* const kPortableMarker = "snappin.portable";
 
 QString assetSuffix()
@@ -28,8 +30,10 @@ QString assetSuffix()
     return QStringLiteral("-windows-x64.zip");
 #elif defined(Q_OS_MACOS)
     return QStringLiteral("-macos-universal.zip");
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
+    return QStringLiteral("-linux-x86_64.AppImage");
 #else
-    return QString(); // 其他平台暂不支持自动安装，只打开发布页
+    return QString(); // 没有对应的安装包，只打开发布页
 #endif
 }
 
@@ -45,6 +49,23 @@ QNetworkRequest apiRequest(const QUrl& url)
 QString updateDir()
 {
     return QDir::temp().filePath(QStringLiteral("SnapPin-update"));
+}
+
+// 安装脚本写的结果，重启后读取并提示
+QString installLogPath()
+{
+    return QDir(updateDir()).filePath(QStringLiteral("update.log"));
+}
+
+// 替换程序需要所在目录可写（装在 Program Files、/usr 等目录时没有写权限）
+bool isDirWritable(const QDir& dir)
+{
+    QFile probe(dir.filePath(QStringLiteral(".snappin-write-test")));
+    if (!probe.open(QIODevice::WriteOnly))
+        return false;
+    probe.close();
+    probe.remove();
+    return true;
 }
 
 #ifdef Q_OS_MACOS
@@ -64,7 +85,7 @@ dir=$(dirname "$zip")
 staging="$dir/staging"
 backup="${app%.app}.old-update.app"
 exec >"$dir/update.log" 2>&1
-fail() { echo "failed $(date): $*"; rm -rf "$staging"; open "$app"; exit 1; }
+fail() { echo "failed $(date): $*"; rm -rf "$staging" "$zip"; open "$app"; exit 1; }
 
 i=0
 while kill -0 "$pid" 2>/dev/null; do
@@ -94,7 +115,7 @@ rm -rf "$backup" "$staging" "$zip"
 echo "updated $(date)"
 open "$app"
 )SH";
-#else
+#elif defined(Q_OS_WIN)
 // 等待旧进程退出 → 解压 → 覆盖安装目录 → 启动新版本；失败时记录日志并启动原程序
 const char* const kInstallScript = R"PS(param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe)
 $log = Join-Path ([IO.Path]::GetDirectoryName($Zip)) 'update.log'
@@ -109,12 +130,41 @@ try {
     Copy-Item -Path (Join-Path $src '*') -Destination $Target -Recurse -Force -ErrorAction Stop
     Remove-Item $staging -Recurse -Force
     Remove-Item $Zip -Force
-    "updated $(Get-Date)" | Out-File $log
+    "updated $(Get-Date)" | Out-File $log -Encoding utf8
 } catch {
-    "failed $(Get-Date): $_" | Out-File $log
+    "failed $(Get-Date): $_" | Out-File $log -Encoding utf8
 }
 Start-Process -FilePath $Exe
 )PS";
+#else
+// 当前运行的 AppImage 文件（由 AppImage 运行时设置），不是 AppImage 时为空
+QString appImagePath()
+{
+    return qEnvironmentVariable("APPIMAGE");
+}
+
+// 等待旧进程退出 → 复制到 AppImage 同目录 → 改名覆盖（原子替换，文件名不变，快捷方式继续有效）→ 启动新版本；
+// 失败时启动原程序
+const char* const kInstallScript = R"SH(#!/bin/sh
+pid=$1; new=$2; target=$3
+dir=$(dirname "$new")
+tmp="$(dirname "$target")/.$(basename "$target").update"
+exec >"$dir/update.log" 2>&1
+fail() { echo "failed $(date): $*"; rm -f "$tmp" "$new"; nohup "$target" >/dev/null 2>&1 & exit 1; }
+
+i=0
+while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1)); [ $i -gt 150 ] && fail "old process did not exit"
+    sleep 0.2
+done
+
+[ "$(head -c 4 "$new" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || fail "$new is not an AppImage"
+cp "$new" "$tmp" && chmod 755 "$tmp" || fail "cannot copy new version next to $target"
+mv -f "$tmp" "$target" || fail "cannot replace $target"
+rm -f "$new"
+echo "updated $(date)"
+nohup "$target" >/dev/null 2>&1 &
+)SH";
 #endif
 
 } // namespace
@@ -122,34 +172,39 @@ Start-Process -FilePath $Exe
 Updater::Updater(QObject* parent)
     : QObject(parent)
 {
+    // 等事件循环和托盘就绪后再提示
+    QTimer::singleShot(kReportDelayMs, this, &Updater::reportLastInstall);
+}
+
+void Updater::reportLastInstall()
+{
+    QFile log(installLogPath());
+    if (!log.open(QIODevice::ReadOnly))
+        return;
+    QString text = QString::fromUtf8(log.readAll());
+    log.close();
+    log.remove();
+    text.remove(QChar(0xFEFF)); // PowerShell 写的 UTF-8 带 BOM
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    const QString last = lines.isEmpty() ? QString() : lines.last().trimmed();
+    if (last.startsWith(QLatin1String("updated")))
+        emit notify(tr("SnapPin 已更新"), tr("当前版本 %1").arg(QStringLiteral(APP_VERSION)));
+    else if (last.startsWith(QLatin1String("failed")))
+        emit notify(tr("更新失败"), tr("自动安装没有完成，请到发布页手动下载。\n%1").arg(last));
 }
 
 bool Updater::canSelfInstall()
 {
 #ifdef Q_OS_WIN
     const QDir appDir(QCoreApplication::applicationDirPath());
-    if (!appDir.exists(QString::fromLatin1(kPortableMarker)))
-        return false;
-    // 装在 Program Files 等目录时没有写权限
-    QFile probe(appDir.filePath(QStringLiteral(".write-test")));
-    if (!probe.open(QIODevice::WriteOnly))
-        return false;
-    probe.close();
-    probe.remove();
-    return true;
+    return appDir.exists(QString::fromLatin1(kPortableMarker)) && isDirWritable(appDir);
 #elif defined(Q_OS_MACOS)
     // 只有 CI 打的发布包（Contents/Resources 里有标记）才覆盖，开发构建不动
     const QString bundle = bundlePath();
     if (bundle.isEmpty() || !QFile::exists(bundle + QStringLiteral("/Contents/Resources/") + QString::fromLatin1(kPortableMarker)))
         return false;
-    // 替换 .app 需要所在目录可写；从“下载”直接打开时系统会把程序转移到只读位置，这里也会失败
-    const QDir parent = QFileInfo(bundle).dir();
-    QFile probe(parent.filePath(QStringLiteral(".snappin-write-test")));
-    if (!probe.open(QIODevice::WriteOnly))
-        return false;
-    probe.close();
-    probe.remove();
-    if (!QFileInfo(bundle).isWritable())
+    // 从“下载”直接打开时系统会把程序转移到只读位置，这里也会失败
+    if (!isDirWritable(QFileInfo(bundle).dir()) || !QFileInfo(bundle).isWritable())
         return false;
     // ad-hoc 签名（没配证书的构建）的签名要求是 cdhash，任何新版本都通不过校验
     QProcess codesign;
@@ -157,6 +212,10 @@ bool Updater::canSelfInstall()
     if (!codesign.waitForFinished(5000) || codesign.exitCode() != 0)
         return false;
     return codesign.readAllStandardOutput().contains("certificate leaf");
+#elif defined(Q_OS_LINUX)
+    // 只替换 AppImage（发布包）；从源码编译或装进系统目录的不动
+    const QString appImage = appImagePath();
+    return !appImage.isEmpty() && QFileInfo(appImage).isFile() && isDirWritable(QFileInfo(appImage).dir());
 #else
     return false;
 #endif
@@ -309,47 +368,56 @@ void Updater::download(const ReleaseInfo& info)
     });
 }
 
-void Updater::install(const QString& zipPath)
+void Updater::install(const QString& packagePath)
 {
-#ifdef Q_OS_MACOS
-    const QString script = QDir(updateDir()).filePath(QStringLiteral("install.sh"));
-    QFile f(script);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        emit notify(tr("更新失败"), tr("无法写入安装脚本"));
-        return;
-    }
-    f.write(kInstallScript);
-    f.close();
-
-    const QStringList args = {script, QString::number(QCoreApplication::applicationPid()), zipPath, bundlePath()};
-    if (!QProcess::startDetached(QStringLiteral("/bin/sh"), args)) {
-        emit notify(tr("更新失败"), tr("无法启动安装程序"));
-        return;
-    }
-    QApplication::quit();
-#else
+#ifdef Q_OS_WIN
     const QString script = QDir(updateDir()).filePath(QStringLiteral("install.ps1"));
+#else
+    const QString script = QDir(updateDir()).filePath(QStringLiteral("install.sh"));
+#endif
     QFile f(script);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         emit notify(tr("更新失败"), tr("无法写入安装脚本"));
         return;
     }
+#ifdef Q_OS_WIN
     f.write("\xEF\xBB\xBF"); // UTF-8 BOM：Windows PowerShell 5 才能正确识别路径中的中文
+#endif
     f.write(kInstallScript);
     f.close();
+    QFile::remove(installLogPath());
 
-    const QStringList args = {
+    QProcess proc;
+    const QString pid = QString::number(QCoreApplication::applicationPid());
+#if defined(Q_OS_WIN)
+    proc.setProgram(QStringLiteral("powershell.exe"));
+    proc.setArguments({
         QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
         QStringLiteral("-WindowStyle"), QStringLiteral("Hidden"), QStringLiteral("-File"), QDir::toNativeSeparators(script),
-        QStringLiteral("-ProcessId"), QString::number(QCoreApplication::applicationPid()),
-        QStringLiteral("-Zip"), QDir::toNativeSeparators(zipPath),
+        QStringLiteral("-ProcessId"), pid,
+        QStringLiteral("-Zip"), QDir::toNativeSeparators(packagePath),
         QStringLiteral("-Target"), QDir::toNativeSeparators(QCoreApplication::applicationDirPath()),
         QStringLiteral("-Exe"), QDir::toNativeSeparators(QCoreApplication::applicationFilePath()),
-    };
-    if (!QProcess::startDetached(QStringLiteral("powershell.exe"), args)) {
+    });
+#elif defined(Q_OS_MACOS)
+    proc.setProgram(QStringLiteral("/bin/sh"));
+    proc.setArguments({script, pid, packagePath, bundlePath()});
+#else
+    proc.setProgram(QStringLiteral("/bin/sh"));
+    proc.setArguments({script, pid, packagePath, appImagePath()});
+    // 去掉 AppImage 运行时为当前进程设置的环境（指向即将卸载的挂载目录），新版本启动时由它自己重新设置
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString appDir = env.value(QStringLiteral("APPDIR"));
+    for (const QString& key : env.keys()) {
+        if (key == QLatin1String("APPIMAGE") || key == QLatin1String("APPDIR") || key == QLatin1String("ARGV0")
+            || key == QLatin1String("OWD") || (!appDir.isEmpty() && env.value(key).contains(appDir)))
+            env.remove(key);
+    }
+    proc.setProcessEnvironment(env);
+#endif
+    if (!proc.startDetached()) {
         emit notify(tr("更新失败"), tr("无法启动安装程序"));
         return;
     }
     QApplication::quit();
-#endif
 }
