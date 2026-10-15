@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = '${{ github.ref_name }}'
+          $v = if ($ref -match '^v(\d+\.\d+\.\d+)$') { $Matches[1] } else { '0.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $dir = 'dist/SnapPin'
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item build/Release/SnapPin.exe $dir
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime "$dir/SnapPin.exe"
+          # 直接附带 VC++ 运行库，免去用户安装 vc_redist
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT\*.dll" | Copy-Item -Destination $dir
+          # 发布包标记：有它自动更新才会覆盖安装目录
+          New-Item -ItemType File "$dir/snappin.portable" | Out-Null
+          Compress-Archive -Path $dir -DestinationPath "SnapPin-$v-windows-x64.zip"
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: SnapPin-*-windows-x64.zip
+          generate_release_notes: true

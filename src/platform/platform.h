@@ -1,0 +1,67 @@
+#pragma once
+
+#include <QKeySequence>
+#include <QList>
+#include <QObject>
+#include <QPixmap>
+#include <QRect>
+#include <functional>
+#include <memory>
+
+class QScreen;
+
+// 截屏：返回指定屏幕的整屏图像（物理像素，devicePixelRatio 设为该屏缩放比例）
+class IScreenCapturer {
+public:
+    virtual ~IScreenCapturer() = default;
+    virtual QPixmap grab(QScreen* screen) = 0;
+    // 截屏后端，取值由平台决定（Windows: "auto" = DXGI 优先，"gdi"）
+    virtual void setBackend(const QString&) {}
+};
+
+struct DetectedWindow {
+    QRect rect;           // 屏幕局部的逻辑坐标
+    int group = 0;        // 所属顶层窗口的 Z 序编号，0 为最上层
+    bool isChild = false; // 顶层窗口内的子控件
+};
+
+// 窗口/控件识别
+class IWindowFinder {
+public:
+    using ElementsCallback = std::function<void(QScreen*, const QList<DetectedWindow>&)>;
+
+    virtual ~IWindowFinder() = default;
+    // 同步，窗口级。必须在遮罩显示之前调用，否则会把遮罩自己识别进去
+    virtual QList<DetectedWindow> windowsOnScreen(QScreen* screen) = 0;
+    // 异步补充控件级矩形（如 UI Automation），结果在主线程回调；context 销毁后不再回调。
+    // 必须在 windowsOnScreen 之后、遮罩显示之前调用
+    virtual void requestElements(QObject* context, ElementsCallback onReady) { Q_UNUSED(context) Q_UNUSED(onReady) }
+    virtual void setElementDetection(bool) {}
+};
+
+// 全局快捷键
+class IHotkeyManager : public QObject {
+    Q_OBJECT
+public:
+    using QObject::QObject;
+    // 返回 false 表示按键被占用或当前平台不支持
+    virtual bool registerHotkey(const QString& actionId, const QKeySequence& seq) = 0;
+    virtual void unregisterAll() = 0;
+
+signals:
+    void activated(const QString& actionId);
+};
+
+struct Platform {
+    std::unique_ptr<IScreenCapturer> capturer;
+    std::unique_ptr<IWindowFinder> windowFinder;
+    std::unique_ptr<IHotkeyManager> hotkeys;
+};
+
+// 抽象工厂：由各平台的实现文件提供（CMake 按平台选择编译）
+Platform createPlatform();
+
+// 开机自启
+bool autostartSupported();
+bool autostartEnabled();
+bool setAutostartEnabled(bool enabled);
