@@ -92,12 +92,34 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Import signing certificate
+        # 固定的自签名证书 "SnapPin Release"：签名身份不变，升级后系统权限（屏幕录制、辅助功能）仍然有效。
+        # 没有配置 secrets（如 fork 仓库）时跳过，退回 ad-hoc 签名
+        env:
+          P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then echo "未配置签名证书，使用 ad-hoc 签名"; exit 0; fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -hex 16)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/id.p12"
+
       - name: Package
         run: |
           v='${{ steps.ver.outputs.version }}'
           macdeployqt build/SnapPin.app
-          # 没有开发者证书，只做 ad-hoc 签名；首次打开需要在 Finder 里右键 > 打开
-          codesign --force --deep --sign - build/SnapPin.app
+          # 不是苹果开发者证书，首次打开仍需在“隐私与安全性”里允许
+          identity=-
+          if security find-identity -p codesigning | grep -q '"SnapPin Release"'; then identity="SnapPin Release"; fi
+          codesign --force --deep --sign "$identity" build/SnapPin.app
+          codesign -d -r- build/SnapPin.app
           ditto -c -k --keepParent build/SnapPin.app "SnapPin-$v-macos-universal.zip"
 
       - uses: actions/upload-artifact@v4

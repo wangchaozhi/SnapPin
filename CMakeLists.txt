@@ -121,6 +121,14 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     )
     target_compile_options(SnapPin PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    # 系统权限（屏幕录制、辅助功能）跟签名绑定。默认的 ad-hoc 签名每次编译都会变，权限随之失效；
+    # 本机开发时指定一个固定的签名身份（与发布版相同的自签名证书 "SnapPin Release"，开发版和安装版共用一条系统授权），授权一次即可长期有效
+    set(SNAPPIN_CODESIGN_IDENTITY "" CACHE STRING "Code signing identity for local builds (keeps macOS permissions across rebuilds)")
+    if(SNAPPIN_CODESIGN_IDENTITY)
+        add_custom_command(TARGET SnapPin POST_BUILD
+            COMMAND codesign --force --sign "${SNAPPIN_CODESIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:SnapPin>"
+            VERBATIM)
+    endif()
     target_link_libraries(SnapPin PRIVATE
         "-framework AppKit" "-framework ApplicationServices" "-framework Carbon"
         "-framework CoreGraphics" "-framework ScreenCaptureKit"
