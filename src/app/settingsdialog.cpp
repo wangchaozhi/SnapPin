@@ -65,7 +65,12 @@ QWidget* SettingsDialog::createGeneralPage(const QString& historyDir)
     m_uia = new QCheckBox(tr("识别窗口内的界面元素（UI Automation）"), capture);
 #else
     m_backend->hide(); // 其他平台只有一种截屏方式
+#ifdef Q_OS_MACOS
     m_uia = new QCheckBox(tr("识别窗口内的界面元素（需要辅助功能权限）"), capture);
+#else
+    m_uia = new QCheckBox(tr("识别窗口内的界面元素（Linux 暂不支持）"), capture);
+    m_uia->setEnabled(false);
+#endif
 #endif
     m_uia->setChecked(m_settings.uiAutomation);
     m_uia->setToolTip(tr("可选中按钮、输入框等控件。复杂程序的识别结果会稍晚出现"));

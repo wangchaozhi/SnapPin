@@ -48,6 +48,8 @@ public:
     // 返回 false 表示按键被占用或当前平台不支持
     virtual bool registerHotkey(const QString& actionId, const QKeySequence& seq) = 0;
     virtual void unregisterAll() = 0;
+    // 当前环境根本不支持全局快捷键时返回给用户的说明（如 Wayland），支持时为空
+    virtual QString unavailableReason() const { return {}; }
 
 signals:
     void activated(const QString& actionId);

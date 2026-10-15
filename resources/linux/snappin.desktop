@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SnapPin
+Comment=截图 + 贴图工具
+Exec=SnapPin
+Icon=snappin
+Terminal=false
+Categories=Utility;Graphics;

@@ -158,6 +158,11 @@ void AppContext::applySettings()
 void AppContext::registerHotkeys()
 {
     m_platform.hotkeys->unregisterAll();
+    const QString unavailable = m_platform.hotkeys->unavailableReason();
+    if (!unavailable.isEmpty()) {
+        m_tray->showMessage(tr("不支持全局快捷键"), unavailable, QSystemTrayIcon::Information, 8000);
+        return;
+    }
     QStringList failed;
     for (auto it = m_settings.hotkeys.cbegin(); it != m_settings.hotkeys.cend(); ++it) {
         if (it.value().isEmpty())

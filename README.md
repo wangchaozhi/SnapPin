@@ -1,6 +1,6 @@
 # SnapPin
 
-用 Qt 6 复刻 [Snipaste](https://www.snipaste.com/) 的截图 + 贴图工具（Windows / macOS）。
+用 Qt 6 复刻 [Snipaste](https://www.snipaste.com/) 的截图 + 贴图工具（Windows / macOS / Linux）。
 
 ## 功能
 
@@ -35,6 +35,20 @@ macOS（14 及以上）下载 `SnapPin-x.y.z-macos-universal.zip`，解压后把
 
 macOS 版暂不支持自动安装更新，有新版本时会打开发布页。
 
+Linux 下载 `SnapPin-x.y.z-linux-x86_64.AppImage`，`chmod +x` 后直接运行。X11 和 Wayland 会话的支持程度不同：
+
+| | X11 | Wayland |
+|---|---|---|
+| 截屏 | ✅ | ✅ 通过 xdg-desktop-portal，首次使用桌面会询问是否允许 |
+| 识别窗口 | ✅ | ❌ 系统不允许读取其他窗口位置，只能手动框选 |
+| 全局快捷键 | ✅ | ❌ 需要在系统设置里自己绑定（见下） |
+| 识别控件、长截图接管滚动 | ❌ | ❌ |
+| 贴图自由摆放 | ✅ | ⚠️ 位置由合成器决定 |
+
+Wayland 下在系统设置的键盘快捷键里添加自定义快捷键，命令填 `/路径/SnapPin.AppImage capture`。
+可用的动作：`capture`（截图）、`pin_clipboard`（贴剪贴板）、`toggle_pins`（隐藏 / 显示贴图）、`history`（截图历史）。
+SnapPin 已在运行时，这条命令只会把动作交给正在运行的实例。
+
 ## 构建
 
 需要 Qt 6.7+（Widgets、Network）和 CMake 3.21+。
@@ -54,7 +68,15 @@ cmake --build build
 open build/SnapPin.app
 ```
 
-开发构建是 ad-hoc 签名，每次重新编译后系统都会把它当作新程序，需要重新授予屏幕录制和辅助功能权限
+Linux（Ubuntu 26.04 为例）：
+
+```bash
+sudo apt install build-essential cmake ninja-build qt6-base-dev libxcb1-dev libgl-dev
+cmake -S . -B build -G Ninja
+cmake --build build
+```
+
+macOS 开发构建是 ad-hoc 签名，每次重新编译后系统都会把它当作新程序，需要重新授予屏幕录制和辅助功能权限
 （在设置里先删掉旧的 SnapPin 条目再添加）。
 
 推送 `v*` 标签会触发 GitHub Actions 构建并发布 Release。
@@ -63,7 +85,7 @@ open build/SnapPin.app
 
 | 目录 | 内容 |
 |---|---|
-| `src/platform` | 平台接口；Windows 实现（DXGI / GDI 截屏、UI Automation、全局快捷键）与 macOS 实现（ScreenCaptureKit、CGWindowList + 辅助功能、Carbon 快捷键、CGEventTap） |
+| `src/platform` | 平台接口；Windows 实现（DXGI / GDI 截屏、UI Automation、全局快捷键）、macOS 实现（ScreenCaptureKit、CGWindowList + 辅助功能、Carbon 快捷键、CGEventTap）与 Linux 实现（X11：EWMH 窗口列表、XGrabKey；Wayland：xdg-desktop-portal 截屏） |
 | `src/capture` | 截图遮罩（状态模式）、工具栏、长截图拼接 |
 | `src/annotation` | 标注图形、工具（策略模式）、撤销栈（命令模式） |
 | `src/pin` | 贴图窗口与管理 |

@@ -104,8 +104,67 @@ jobs:
           name: macos
           path: SnapPin-*-macos-universal.zip
 
+  linux:
+    # 在较老的系统上构建，AppImage 才能在更多发行版上运行（glibc 向后兼容）
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        run: |
+          ref='${{ github.ref_name }}'
+          if [[ $ref =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then v=${BASH_REMATCH[1]}; else v=0.0.0; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libxcb1-dev libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libfuse2
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: qtwayland
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          -DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          v='${{ steps.ver.outputs.version }}'
+          DESTDIR=AppDir cmake --install build
+          base=https://github.com/linuxdeploy
+          wget -q $base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q $base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          # 同时打包 X11（xcb）和 Wayland 平台插件，运行时由 Qt 按会话类型选择
+          EXTRA_PLATFORM_PLUGINS=libqwayland-generic.so \
+            ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          mv SnapPin-*.AppImage "SnapPin-$v-linux-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: SnapPin-*-linux-x86_64.AppImage
+
   release:
-    needs: [windows, macos]
+    needs: [windows, macos, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -115,5 +174,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: SnapPin-*.zip
+          files: |
+            SnapPin-*.zip
+            SnapPin-*.AppImage
           generate_release_notes: true

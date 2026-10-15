@@ -21,6 +21,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Network)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Qt6 REQUIRED COMPONENTS DBus) # Wayland 截屏走 xdg-desktop-portal
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
+endif()
 qt_standard_project_setup()
 
 if(MSVC)
@@ -72,6 +77,14 @@ elseif(APPLE)
         src/platform/mac/machotkeymanager.mm
         src/platform/mac/macwheelthrottle.mm
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(PLATFORM_SOURCES
+        src/platform/linux/linuxplatform.h
+        src/platform/linux/linuxplatform.cpp
+        src/platform/linux/x11windowfinder.cpp
+        src/platform/linux/x11hotkeymanager.cpp
+        src/platform/linux/portalcapturer.cpp
+    )
 else()
     set(PLATFORM_SOURCES src/platform/generic/genericplatform.cpp)
 endif()
@@ -112,4 +125,11 @@ if(APPLE)
         "-framework AppKit" "-framework ApplicationServices" "-framework Carbon"
         "-framework CoreGraphics" "-framework ScreenCaptureKit"
     )
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(SnapPin PRIVATE Qt6::DBus PkgConfig::XCB)
+    install(TARGETS SnapPin RUNTIME DESTINATION bin)
+    install(FILES resources/linux/snappin.desktop DESTINATION share/applications)
+    install(FILES resources/linux/snappin.svg DESTINATION share/icons/hicolor/scalable/apps)
 endif()

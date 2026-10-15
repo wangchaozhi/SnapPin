@@ -88,6 +88,13 @@ protected:
         p.setPen(QPen(QColor(255, 80, 40), 2, Qt::DashLine));
         p.drawRect(rect().adjusted(1, 1, -2, -2));
     }
+
+    void resizeEvent(QResizeEvent*) override
+    {
+        // 没有合成器的 X11 桌面上透明背景会画成黑色、盖住选区，用形状遮罩只保留外圈边框
+        const QRegion outer(rect());
+        setMask(outer.subtracted(QRegion(rect().adjusted(kFrameMargin, kFrameMargin, -kFrameMargin, -kFrameMargin))));
+    }
 };
 
 } // namespace
