@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
+#include <vector>
 
 class IScreenCapturer;
 class IWheelThrottle;
@@ -35,6 +36,9 @@ private:
     void tick();
     void replayNextStep();
     void adaptReplayStep();
+    void beginAwaiting();
+    void recoverFromNoMatch();
+    void debugLog(const QString& line, const QImage* frame = nullptr);
     void updatePanel(ScrollStitcher::Result r);
     void updateStatus();
     void finish(FinishAction action);
@@ -56,12 +60,24 @@ private:
     QLabel* m_status = nullptr;
     QString m_statusBase;
     bool m_closed = false;
-    QImage m_pending;           // 最近一次截到的帧
-    bool m_pendingUsed = false; // 是否已经交给拼接器
+    struct FrameSig {
+        std::vector<size_t> hash;
+        std::vector<bool> uniform;
+    };
+    FrameSig signature(const QImage& img) const;
+    static bool noMotion(const FrameSig& a, const FrameSig& b);
+
+    FrameSig m_lastSig;          // 上一次截到的帧
+    QElapsedTimer m_stillClock;  // 画面停止上下移动的时长
+    bool m_settled = false;      // 当前静止画面已交给拼接器
 
     bool m_throttleActive = false;
     bool m_awaitingResponse = false; // 已重放一步，等画面滚动并停稳
+    bool m_motionSinceReplay = false;
     QElapsedTimer m_sinceReplay;
     int m_replayStep = 120;          // 每步重放的滚轮量，按实际滚动距离自适应
+    int m_stepCeiling = 360;         // 步长上限；接不上后降低
     int m_lastReplayDelta = 0;
+    int m_lastReplaySigned = 0;  // 上一步重放的滚轮量（带方向），对不上时据此退回
+    bool m_recovering = false;   // 正在退回上一步
 };

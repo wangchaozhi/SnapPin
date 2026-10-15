@@ -36,17 +36,32 @@ QImage makeContent()
     return img;
 }
 
+bool g_animate = false; // 模拟页面动画：标题栏里移动的进度条 + 内容里每帧变色的色块
+int g_frameNo = 0;
+qreal g_dpr = 1.0;      // 模拟高分屏截图（帧带有设备像素比）
+
 QImage makeFrame(const QImage& content, int scroll)
 {
     QImage f(W, H, QImage::Format_RGB32);
     QPainter p(&f);
     p.fillRect(0, 0, W, kHeader, QColor(30, 60, 200));                 // 吸顶标题栏
     p.drawImage(QPoint(0, kHeader), content.copy(0, scroll, W, kView)); // 滚动区域
+    if (g_animate) {
+        const int n = g_frameNo++;
+        p.fillRect((n * 37) % W, kHeader - 6, 60, 4, QColor(245, 158, 11));
+        // 内容坐标 600~660 处的色块，随内容滚动，但颜色每帧变化
+        const int boxTop = kHeader + 600 - scroll;
+        p.setClipRect(0, kHeader, W, kView);
+        p.fillRect(20, boxTop, W - 60, 60, QColor::fromHsv((n * 47) % 360, 160, 220));
+        p.setClipping(false);
+    }
     p.fillRect(0, H - kFooter, W, kFooter, QColor(80, 80, 80));         // 底部工具栏
     // 滚动条：滑块位置随滚动变化，所有行都会受影响
     p.fillRect(W - kScrollbar, kHeader, kScrollbar, kView, QColor(230, 230, 230));
     const int thumb = kHeader + scroll * (kView - 40) / (kContent - kView);
     p.fillRect(W - kScrollbar + 2, thumb, kScrollbar - 4, 40, QColor(120, 120, 120));
+    p.end();
+    f.setDevicePixelRatio(g_dpr);
     return f;
 }
 
@@ -78,7 +93,10 @@ void runCase(const char* name, int start, const QList<int>& steps)
     int scroll = start, lo = start, hi = start;
 
     check(s.add(makeFrame(content, scroll)) == ScrollStitcher::Result::First, "first frame");
-    check(s.add(makeFrame(content, scroll)) == ScrollStitcher::Result::Unchanged, "unchanged frame");
+    // 动画页面原地重绘一帧：不应被当成滚动
+    const auto again = s.add(makeFrame(content, scroll));
+    check(again == ScrollStitcher::Result::Unchanged || (g_animate && again == ScrollStitcher::Result::NoMatch),
+          "unchanged frame");
     for (int step : steps) {
         const int previous = scroll;
         scroll = qBound(0, scroll + step, kContent - kView);
@@ -101,7 +119,10 @@ void runCase(const char* name, int start, const QList<int>& steps)
             std::printf("   view top %d height %d, expected top %d height %d, result %d\n", s.currentView().top(),
                         s.currentView().height(), kHeader + scroll - lo, kView, int(r));
     }
-    check(sameIgnoringScrollbar(s.result(), expected(content, lo, hi)), "stitched image matches ideal");
+    if (g_animate) // 动画区域的像素取决于截到哪一帧，只检查高度
+        check(s.result().height() == expected(content, lo, hi).height(), "stitched height matches ideal");
+    else
+        check(sameIgnoringScrollbar(s.result(), expected(content, lo, hi)), "stitched image matches ideal");
     std::printf("   result height %d, expected %d\n", s.result().height(), expected(content, lo, hi).height());
 }
 
@@ -109,11 +130,21 @@ void runCase(const char* name, int start, const QList<int>& steps)
 
 int main()
 {
+    std::setvbuf(stdout, nullptr, _IONBF, 0); // 与调试输出（stderr）保持顺序
     // 单步滚动量不超过可视高度（230）的 60%，即重叠至少 40%
     runCase("scroll down", 0, {37, 120, 5, 90, 135, 64});
     runCase("scroll up from middle", 1200, {-40, -135, -72, -130, -9});
     runCase("down, back up, then further up", 800, {100, 130, -120, -130, -100, -135, 60});
     // 一次滚过大半屏后跳回已截过的区域：需要在整个已拼接内容中重新定位
     runCase("jump back into captured area", 500, {150, 150, 150, -400, 60, 300});
+    // 125% 缩放屏幕的截图帧：标题栏 / 工具栏不能被按逻辑尺寸缩小
+    g_dpr = 1.25;
+    runCase("high-dpi frames, down and up", 600, {90, 120, -300, -80, 60});
+    g_dpr = 1.0;
+    // 带动画的页面：标题栏进度条在动、内容里有每帧变色的色块
+    g_animate = true;
+    runCase("animated header and content, down", 300, {60, 90, 100, 80, 120, 70, 90});
+    runCase("animated header and content, up", 900, {-60, -90, -100, -80, -120, -70});
+    g_animate = false;
     return failures == 0 ? 0 : 1;
 }

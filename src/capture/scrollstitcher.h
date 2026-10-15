@@ -33,9 +33,11 @@ private:
     struct Rows {
         std::vector<size_t> hash;
         std::vector<bool> uniform; // 单色行（空白）不参与匹配评分
+        std::vector<bool> ignore;  // 可选：不参与匹配评分的行
     };
     Rows analyze(const QImage& img) const;
-    bool detectBands(const Rows& a, const Rows& b, int& top, int& bottom) const;
+    // 已知 b 相对 a 滚动了 dy（b[y] == a[y+dy]），找出没有跟着滚动的首尾固定区域
+    static void bandsFromShift(const Rows& a, const Rows& b, int dy, int& top, int& bottom);
     // 在 body 中查找滚动区域 rows 的位置 p（可为负或超出底部，表示露出了新内容）
     bool locate(const Rows& region, int from, int to, int& pos) const;
     void place(const QImage& frame, const Rows& region, int pos);

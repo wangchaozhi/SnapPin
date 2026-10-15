@@ -2,6 +2,9 @@
 
 #include "platform/platform.h"
 
+#include <QDir>
+#include <QHashFunctions>
+#include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -14,10 +17,11 @@
 namespace {
 
 constexpr int kIntervalMs = 50;
-constexpr int kReplayTimeoutMs = 600; // 重放后这么久画面仍没动，视为已到顶/到底
-constexpr int kWheelNotch = 120;        // 一格滚轮
+constexpr int kStillMs = 250;     // 只有局部变化（动画、光标闪烁）时，静止这么久才算停稳
+constexpr int kNoMotionMs = 400;  // 重放后这么久都没有滚动：已到顶/到底，或程序不响应
+constexpr int kStuckMs = 3000;    // 滚动开始后迟迟停不下来时的兜底
+constexpr int kWheelNotch = 120;  // 一格滚轮
 constexpr int kMinReplayStep = 30;
-constexpr int kMaxReplayStep = kWheelNotch * 3;
 constexpr int kFrameMargin = 3;     // 边框画在选区外，不会被截进去
 constexpr int kScrollbarIgnore = 24; // 逻辑像素：右侧滚动条区域不参与匹配
 constexpr int kPreviewW = 150;
@@ -26,18 +30,45 @@ constexpr int kPreviewH = 320;
 const Qt::WindowFlags kOverlayFlags =
     Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool | Qt::WindowDoesNotAcceptFocus;
 
-// 比较两帧，忽略右侧滚动条区域（Win11 的滚动条在滚动后还会持续淡入淡出）
-bool sameIgnoringRight(const QImage& a, const QImage& b, int ignoreRight)
+} // namespace
+
+// 逐行签名，忽略右侧滚动条区域（Win11 的滚动条在滚动后还会持续淡入淡出）
+ScrollCaptureSession::FrameSig ScrollCaptureSession::signature(const QImage& img) const
 {
-    if (a.size() != b.size() || a.format() != b.format() || a.depth() != 32)
-        return false;
-    const int w = qMax(1, a.width() - qMin(ignoreRight, a.width() / 4));
-    for (int y = 0; y < a.height(); ++y) {
-        if (std::memcmp(a.constScanLine(y), b.constScanLine(y), size_t(w) * 4) != 0)
-            return false;
+    FrameSig sig;
+    if (img.depth() != 32)
+        return sig;
+    const int w = qMax(1, img.width() - qMin(m_ignoreRight, img.width() / 4));
+    sig.hash.resize(size_t(img.height()));
+    sig.uniform.resize(size_t(img.height()));
+    for (int y = 0; y < img.height(); ++y) {
+        const auto* line = reinterpret_cast<const quint32*>(img.constScanLine(y));
+        sig.hash[size_t(y)] = qHashBits(line, size_t(w) * 4);
+        bool uniform = true;
+        for (int x = 1; x < w && uniform; ++x)
+            uniform = line[x] == line[0];
+        sig.uniform[size_t(y)] = uniform;
     }
-    return true;
+    return sig;
 }
+
+// 两帧之间没有上下移动：有内容的行大多停在原位，只有局部区域变化
+bool ScrollCaptureSession::noMotion(const FrameSig& a, const FrameSig& b)
+{
+    if (a.hash.size() != b.hash.size() || a.hash.empty())
+        return false;
+    int informative = 0, same = 0;
+    for (size_t y = 0; y < a.hash.size(); ++y) {
+        if (a.uniform[y] && b.uniform[y])
+            continue;
+        ++informative;
+        if (a.hash[y] == b.hash[y])
+            ++same;
+    }
+    return informative < 8 ? a.hash == b.hash : same >= informative * 6 / 10;
+}
+
+namespace {
 
 // 选区边框：透明、鼠标穿透，让滚轮事件落到下面的程序
 class RegionFrame : public QWidget {
@@ -172,20 +203,37 @@ void ScrollCaptureSession::tick()
     if (r.isEmpty())
         return;
     const QImage frame = shot.copy(r).toImage();
-    // 平滑滚动过程中，程序先整体平移旧内容、稍后才重绘新露出的部分，
-    // 这时截到的帧底部是脏的。连续两次截到相同画面（滚动已停稳）才拿去拼接
-    if (!sameIgnoringRight(frame, m_pending, m_ignoreRight)) {
-        m_pending = frame;
-        m_pendingUsed = false;
+    const FrameSig sig = signature(frame);
+    const bool identical = !sig.hash.empty() && sig.hash == m_lastSig.hash;
+    const bool still = identical || noMotion(sig, m_lastSig);
+    m_lastSig = sig;
+
+    if (!still) { // 内容在上下移动
+        m_settled = false;
+        m_stillClock.invalidate();
+        m_motionSinceReplay = true;
         return;
     }
-    if (!m_pendingUsed) {
-        m_pendingUsed = true;
+    if (!m_stillClock.isValid())
+        m_stillClock.start();
+
+    // 平滑滚动时程序先平移旧内容、稍后才重绘新露出的部分，这期间的帧是脏的。
+    // 连续两帧完全相同立即算停稳；只有局部变化（动画、光标闪烁）时静止一会儿再算
+    if (!m_settled && (identical || m_stillClock.elapsed() >= kStillMs)) {
+        m_settled = true;
         const auto result = m_stitcher.add(frame);
-        if (result == ScrollStitcher::Result::Appended || result == ScrollStitcher::Result::Moved) {
-            if (m_awaitingResponse)
-                adaptReplayStep();
+        debugLog(QStringLiteral("settled (%1) -> result %2 scroll %3 total %4")
+                     .arg(identical ? QStringLiteral("identical") : QStringLiteral("still"))
+                     .arg(int(result)).arg(m_stitcher.lastScroll()).arg(m_stitcher.resultHeight()), &frame);
+        if (m_awaitingResponse && m_motionSinceReplay) { // 上一步滚动已完成
             m_awaitingResponse = false;
+            const bool ok = result == ScrollStitcher::Result::Appended || result == ScrollStitcher::Result::Moved;
+            if (ok && !m_recovering)
+                adaptReplayStep();
+            if (ok)
+                m_recovering = false;
+            else if (result == ScrollStitcher::Result::NoMatch)
+                recoverFromNoMatch();
         }
         if (result == ScrollStitcher::Result::Full)
             m_timer.stop();
@@ -199,19 +247,81 @@ void ScrollCaptureSession::replayNextStep()
 {
     if (!m_throttleActive)
         return;
-    // 画面已停稳且拼接过：上一步已生效，或等了足够久仍没动（到顶 / 到底），放出下一步
-    if (m_awaitingResponse && m_sinceReplay.elapsed() < kReplayTimeoutMs)
+    if (m_awaitingResponse) {
+        const qint64 ms = m_sinceReplay.elapsed();
+        if (!m_motionSinceReplay && ms >= kNoMotionMs) {
+            // 完全没滚动：已到顶 / 到底，同方向剩下的滚动没有意义
+            debugLog(QStringLiteral("no motion after replay, dropping %1").arg(m_throttle->pendingDelta()));
+            m_throttle->clear();
+            m_awaitingResponse = false;
+        } else if (ms >= kStuckMs) {
+            debugLog(QStringLiteral("replay stuck"));
+            m_awaitingResponse = false;
+        } else {
+            updateStatus();
+            return; // 上一步还在滚动或尚未停稳
+        }
+    }
+    if (!m_settled) // 画面停稳并拼接后才放出下一步
         return;
-    m_awaitingResponse = false;
     const int pending = m_throttle->pendingDelta();
     if (pending != 0) {
         m_lastReplayDelta = qMin(qAbs(pending), m_replayStep);
-        if (m_throttle->replay(m_replayStep)) {
-            m_awaitingResponse = true;
-            m_sinceReplay.restart();
-        }
+        m_lastReplaySigned = pending > 0 ? m_lastReplayDelta : -m_lastReplayDelta;
+        if (m_throttle->replay(m_replayStep))
+            beginAwaiting();
+        debugLog(QStringLiteral("replay %1 of %2 (step %3)").arg(m_lastReplaySigned).arg(pending).arg(m_replayStep));
     }
     updateStatus();
+}
+
+void ScrollCaptureSession::beginAwaiting()
+{
+    m_awaitingResponse = true;
+    m_motionSinceReplay = false;
+    m_sinceReplay.restart();
+}
+
+void ScrollCaptureSession::recoverFromNoMatch()
+{
+    // 这一步滚得太远、和已拼接内容对不上：退回这一步，步长减半后重新分步滚过去
+    if (m_recovering || m_lastReplaySigned == 0 || m_replayStep <= kMinReplayStep) {
+        // 退回去也对不上，或步长已是最小：停止自动回放，提示用户往回滚
+        debugLog(QStringLiteral("give up, dropping %1").arg(m_throttle->pendingDelta()));
+        m_throttle->clear();
+        m_recovering = false;
+        return;
+    }
+    m_throttle->requeue(m_lastReplaySigned);
+    m_replayStep = qMax(kMinReplayStep, qAbs(m_lastReplaySigned) / 2);
+    m_stepCeiling = m_replayStep; // 之后不再放大，避免反复失败
+    if (m_throttle->inject(-m_lastReplaySigned)) {
+        m_recovering = true;
+        beginAwaiting();
+        debugLog(QStringLiteral("no match: scroll back %1, step now %2").arg(-m_lastReplaySigned).arg(m_replayStep));
+    }
+    m_lastReplaySigned = 0;
+}
+
+void ScrollCaptureSession::debugLog(const QString& line, const QImage* frame)
+{
+    // 调试：设置环境变量 SNAPPIN_SCROLL_DEBUG=<目录> 后记录每一步并保存停稳的帧
+    static const QString dir = qEnvironmentVariable("SNAPPIN_SCROLL_DEBUG");
+    if (dir.isEmpty())
+        return;
+    static QElapsedTimer clock;
+    static int frameNo = 0;
+    if (!clock.isValid())
+        clock.start();
+    QString text = QStringLiteral("%1 ms  %2").arg(clock.elapsed(), 6).arg(line);
+    if (frame) {
+        const QString name = QStringLiteral("f%1.png").arg(frameNo++, 3, 10, QLatin1Char('0'));
+        frame->save(QDir(dir).filePath(name));
+        text += QStringLiteral("  [%1]").arg(name);
+    }
+    QFile f(QDir(dir).filePath(QStringLiteral("scroll.log")));
+    if (f.open(QIODevice::Append | QIODevice::Text))
+        f.write(text.toUtf8() + '\n');
 }
 
 void ScrollCaptureSession::adaptReplayStep()
@@ -222,7 +332,7 @@ void ScrollCaptureSession::adaptReplayStep()
     if (px <= 0 || m_lastReplayDelta <= 0 || viewH <= 0)
         return;
     const double pxPerUnit = double(px) / m_lastReplayDelta;
-    m_replayStep = qBound(kMinReplayStep, int(viewH * 0.4 / pxPerUnit), kMaxReplayStep);
+    m_replayStep = qBound(kMinReplayStep, int(viewH * 0.4 / pxPerUnit), m_stepCeiling);
 }
 
 void ScrollCaptureSession::updateStatus()

@@ -73,6 +73,9 @@ public:
     void stop() override;
     int pendingDelta() const override;
     bool replay(int maxDelta) override;
+    void clear() override;
+    void requeue(int delta) override;
+    bool inject(int delta) override;
 
 private:
     std::thread m_thread;

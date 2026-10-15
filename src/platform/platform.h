@@ -52,16 +52,20 @@ signals:
     void activated(const QString& actionId);
 };
 
-// 长截图：接管选区内的滚轮输入，由调用方按节奏重放，保证每一步滚动都能拼接上
+// 长截图：接管目标窗口上的滚轮输入，由调用方按节奏重放，保证每一步滚动都能拼接上
 class IWheelThrottle {
 public:
     virtual ~IWheelThrottle() = default;
-    // localPhysRect：选区在该屏截图中的物理像素矩形。不支持时返回 false（滚轮照常直达程序）
+    // localPhysRect：选区在该屏截图中的物理像素矩形；接管范围是选区所在的整个窗口。
+    // 必须在长截图自己的边框、面板显示之后调用。不支持时返回 false（滚轮照常直达程序）
     virtual bool start(QScreen* screen, const QRect& localPhysRect) { Q_UNUSED(screen) Q_UNUSED(localPhysRect) return false; }
     virtual void stop() {}
     virtual int pendingDelta() const { return 0; } // 已拦截尚未重放的滚轮量，正数向上
-    // 重放不超过 maxDelta 的滚轮量；光标已离开选区时丢弃队列并返回 false
+    // 重放不超过 maxDelta 的滚轮量；光标已离开目标窗口时丢弃队列并返回 false
     virtual bool replay(int maxDelta) { Q_UNUSED(maxDelta) return false; }
+    virtual void clear() {} // 丢弃排队的滚轮量（已滚到头）
+    virtual void requeue(int delta) { Q_UNUSED(delta) } // 把一步滚动放回队列（撤回后重新分步滚）
+    virtual bool inject(int delta) { Q_UNUSED(delta) return false; } // 直接注入一次滚动，不经过队列
 };
 
 struct Platform {
