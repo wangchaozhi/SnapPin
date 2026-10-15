@@ -58,6 +58,7 @@ private:
     QWidget* m_panel = nullptr;
     QLabel* m_preview = nullptr;
     QLabel* m_status = nullptr;
+    QWidget* m_permissionRow = nullptr; // 缺少系统权限、无法接管滚动时的授权提示
     QString m_statusBase;
     bool m_closed = false;
     struct FrameSig {

@@ -1,6 +1,8 @@
 #include "macplatform.h"
 
 #include <QApplication>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QScreen>
 #include <QWidget>
 #include <atomic>
@@ -209,4 +211,14 @@ bool MacWheelThrottle::replay(int maxDelta)
         chunk = cur > 0 ? qMin(cur, maxDelta) : qMax(cur, -maxDelta);
     } while (!g_pending.compare_exchange_weak(cur, cur - chunk));
     return inject(chunk);
+}
+
+bool MacWheelThrottle::needsPermission() const
+{
+    return !AXIsProcessTrusted();
+}
+
+void MacWheelThrottle::openPermissionSettings()
+{
+    QDesktopServices::openUrl(QUrl(QStringLiteral("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")));
 }

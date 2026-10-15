@@ -146,6 +146,10 @@ void ScrollCaptureSession::start()
 
     // 接管选区内的滚轮：滚得再快也按“滚一步 → 停稳 → 拼接”的节奏回放
     m_throttleActive = m_throttle->start(m_screen, m_physRect);
+    debugLog(QStringLiteral("start: wheel throttle %1").arg(m_throttleActive ? QStringLiteral("active") : QStringLiteral("unavailable")));
+    // 没有接管时快速滚动会接不上；原因是缺权限的话提示用户授权，授权后 tick() 里自动接管
+    m_permissionRow->setVisible(!m_throttleActive && m_throttle->needsPermission());
+    m_panel->adjustSize();
 
     // 等遮罩从屏幕上消失后再开始截取
     QTimer::singleShot(200, this, [this] {
@@ -174,6 +178,19 @@ QWidget* ScrollCaptureSession::createPanel()
     m_status->setAlignment(Qt::AlignCenter);
     m_status->setWordWrap(true);
 
+    m_permissionRow = new QWidget(panel);
+    auto* permissionText = new QLabel(tr("未开启“辅助功能”权限，\n快速滚动可能接不上"), m_permissionRow);
+    permissionText->setAlignment(Qt::AlignCenter);
+    permissionText->setStyleSheet(QStringLiteral("color:#c0392b;"));
+    auto* grant = new QPushButton(tr("去授权"), m_permissionRow);
+    grant->setFocusPolicy(Qt::NoFocus);
+    connect(grant, &QPushButton::clicked, this, [this] { m_throttle->openPermissionSettings(); });
+    auto* permissionLayout = new QVBoxLayout(m_permissionRow);
+    permissionLayout->setContentsMargins(0, 0, 0, 0);
+    permissionLayout->addWidget(permissionText);
+    permissionLayout->addWidget(grant);
+    m_permissionRow->hide();
+
     auto* copy = new QPushButton(tr("完成"), panel);
     copy->setToolTip(tr("复制到剪贴板"));
     auto* pin = new QPushButton(tr("贴图"), panel);
@@ -198,6 +215,7 @@ QWidget* ScrollCaptureSession::createPanel()
     layout->addWidget(hint);
     layout->addWidget(m_preview);
     layout->addWidget(m_status);
+    layout->addWidget(m_permissionRow);
     layout->addLayout(row1);
     layout->addLayout(row2);
     return panel;
@@ -207,6 +225,13 @@ void ScrollCaptureSession::tick()
 {
     if (!m_screen)
         return;
+    if (m_permissionRow->isVisible() && !m_throttle->needsPermission()) {
+        // 用户在长截图进行中授予了权限：现在接管滚动
+        m_throttleActive = m_throttle->start(m_screen, m_physRect);
+        debugLog(QStringLiteral("permission granted: wheel throttle %1").arg(m_throttleActive ? QStringLiteral("active") : QStringLiteral("unavailable")));
+        m_permissionRow->hide();
+        m_panel->adjustSize();
+    }
     const QPixmap shot = m_capturer->grab(m_screen);
     const QRect r = m_physRect & QRect(QPoint(0, 0), shot.size());
     if (r.isEmpty())

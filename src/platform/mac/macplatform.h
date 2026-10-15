@@ -70,6 +70,8 @@ public:
     void clear() override;
     void requeue(int delta) override;
     bool inject(int delta) override;
+    bool needsPermission() const override;
+    void openPermissionSettings() override;
 
 private:
     std::thread m_thread;

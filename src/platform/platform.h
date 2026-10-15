@@ -69,6 +69,9 @@ public:
     virtual void clear() {} // 丢弃排队的滚轮量（已滚到头）
     virtual void requeue(int delta) { Q_UNUSED(delta) } // 把一步滚动放回队列（撤回后重新分步滚）
     virtual bool inject(int delta) { Q_UNUSED(delta) return false; } // 直接注入一次滚动，不经过队列
+    // 缺少系统权限而无法接管时为 true（macOS 的“辅助功能”），界面据此提示用户授权；授权后 start() 即可成功
+    virtual bool needsPermission() const { return false; }
+    virtual void openPermissionSettings() {}
 };
 
 struct Platform {
