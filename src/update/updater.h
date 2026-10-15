@@ -18,8 +18,9 @@ struct ReleaseInfo {
     QByteArray sha256; // GitHub 提供的资产摘要（十六进制），可能为空
 };
 
-// 自动更新：从 GitHub Releases 获取最新版本，下载安装包并替换当前目录后重启。
-// 只有发布包（目录中有 snappin.portable 标记）才会自动安装，开发构建只打开发布页
+// 自动更新：从 GitHub Releases 获取最新版本，下载安装包并替换当前目录（macOS 为 .app）后重启。
+// 只有发布包（Windows 在程序目录、macOS 在 Contents/Resources 中有 snappin.portable 标记）才会自动安装，
+// 开发构建和 Linux 只打开发布页
 class Updater : public QObject {
     Q_OBJECT
 public:

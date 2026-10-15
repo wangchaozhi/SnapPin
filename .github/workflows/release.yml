@@ -115,6 +115,8 @@ jobs:
         run: |
           v='${{ steps.ver.outputs.version }}'
           macdeployqt build/SnapPin.app
+          # 发布包标记：有它自动更新才会替换 .app；必须在签名之前放入，否则会破坏签名
+          mkdir -p build/SnapPin.app/Contents/Resources && touch build/SnapPin.app/Contents/Resources/snappin.portable
           # 不是苹果开发者证书，首次打开仍需在“隐私与安全性”里允许
           identity=-
           if security find-identity -p codesigning | grep -q '"SnapPin Release"'; then identity="SnapPin Release"; fi

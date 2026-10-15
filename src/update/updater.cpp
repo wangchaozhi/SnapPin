@@ -5,6 +5,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -23,8 +24,10 @@ const char* const kPortableMarker = "snappin.portable";
 
 QString assetSuffix()
 {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN)
     return QStringLiteral("-windows-x64.zip");
+#elif defined(Q_OS_MACOS)
+    return QStringLiteral("-macos-universal.zip");
 #else
     return QString(); // 其他平台暂不支持自动安装，只打开发布页
 #endif
@@ -44,6 +47,54 @@ QString updateDir()
     return QDir::temp().filePath(QStringLiteral("SnapPin-update"));
 }
 
+#ifdef Q_OS_MACOS
+// 当前程序所在的 .app（…/SnapPin.app/Contents/MacOS/SnapPin），不在 .app 里时为空
+QString bundlePath()
+{
+    QDir dir(QCoreApplication::applicationDirPath());
+    if (dir.dirName() != QLatin1String("MacOS") || !dir.cdUp() || dir.dirName() != QLatin1String("Contents") || !dir.cdUp())
+        return QString();
+    return dir.absolutePath().endsWith(QLatin1String(".app")) ? dir.absolutePath() : QString();
+}
+
+// 等待旧进程退出 → 解压 → 校验新包的签名与当前程序一致 → 替换 .app（失败回滚）→ 启动新版本；失败时启动原程序
+const char* const kInstallScript = R"SH(#!/bin/sh
+pid=$1; zip=$2; app=$3
+dir=$(dirname "$zip")
+staging="$dir/staging"
+backup="${app%.app}.old-update.app"
+exec >"$dir/update.log" 2>&1
+fail() { echo "failed $(date): $*"; rm -rf "$staging"; open "$app"; exit 1; }
+
+i=0
+while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1)); [ $i -gt 150 ] && fail "old process did not exit"
+    sleep 0.2
+done
+
+rm -rf "$staging"
+ditto -x -k "$zip" "$staging" || fail "cannot extract $zip"
+new=$(find "$staging" -maxdepth 1 -name '*.app' | head -n 1)
+[ -n "$new" ] || fail "no .app in $zip"
+# 程序自己下载的文件不带隔离属性，保险起见仍清除，避免 Gatekeeper 拦截
+xattr -dr com.apple.quarantine "$new" 2>/dev/null
+# 新包必须满足当前程序的签名要求（同一证书、同一 bundle ID），系统权限才能延续，也防止被替换成别人签名的程序
+req=$(codesign -d -r- "$app" 2>/dev/null | sed -n 's/^designated => //p')
+[ -n "$req" ] || fail "cannot read designated requirement of $app"
+codesign --verify --deep --strict -R="$req" "$new" || fail "signature of new version does not match"
+
+rm -rf "$backup"
+mv "$app" "$backup" || fail "cannot move $app"
+if ! mv "$new" "$app"; then
+    rm -rf "$app"
+    mv "$backup" "$app"
+    fail "cannot install new version, rolled back"
+fi
+rm -rf "$backup" "$staging" "$zip"
+echo "updated $(date)"
+open "$app"
+)SH";
+#else
 // 等待旧进程退出 → 解压 → 覆盖安装目录 → 启动新版本；失败时记录日志并启动原程序
 const char* const kInstallScript = R"PS(param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe)
 $log = Join-Path ([IO.Path]::GetDirectoryName($Zip)) 'update.log'
@@ -64,6 +115,7 @@ try {
 }
 Start-Process -FilePath $Exe
 )PS";
+#endif
 
 } // namespace
 
@@ -85,6 +137,26 @@ bool Updater::canSelfInstall()
     probe.close();
     probe.remove();
     return true;
+#elif defined(Q_OS_MACOS)
+    // 只有 CI 打的发布包（Contents/Resources 里有标记）才覆盖，开发构建不动
+    const QString bundle = bundlePath();
+    if (bundle.isEmpty() || !QFile::exists(bundle + QStringLiteral("/Contents/Resources/") + QString::fromLatin1(kPortableMarker)))
+        return false;
+    // 替换 .app 需要所在目录可写；从“下载”直接打开时系统会把程序转移到只读位置，这里也会失败
+    const QDir parent = QFileInfo(bundle).dir();
+    QFile probe(parent.filePath(QStringLiteral(".snappin-write-test")));
+    if (!probe.open(QIODevice::WriteOnly))
+        return false;
+    probe.close();
+    probe.remove();
+    if (!QFileInfo(bundle).isWritable())
+        return false;
+    // ad-hoc 签名（没配证书的构建）的签名要求是 cdhash，任何新版本都通不过校验
+    QProcess codesign;
+    codesign.start(QStringLiteral("/usr/bin/codesign"), {QStringLiteral("-d"), QStringLiteral("-r-"), bundle});
+    if (!codesign.waitForFinished(5000) || codesign.exitCode() != 0)
+        return false;
+    return codesign.readAllStandardOutput().contains("certificate leaf");
 #else
     return false;
 #endif
@@ -239,6 +311,23 @@ void Updater::download(const ReleaseInfo& info)
 
 void Updater::install(const QString& zipPath)
 {
+#ifdef Q_OS_MACOS
+    const QString script = QDir(updateDir()).filePath(QStringLiteral("install.sh"));
+    QFile f(script);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        emit notify(tr("更新失败"), tr("无法写入安装脚本"));
+        return;
+    }
+    f.write(kInstallScript);
+    f.close();
+
+    const QStringList args = {script, QString::number(QCoreApplication::applicationPid()), zipPath, bundlePath()};
+    if (!QProcess::startDetached(QStringLiteral("/bin/sh"), args)) {
+        emit notify(tr("更新失败"), tr("无法启动安装程序"));
+        return;
+    }
+    QApplication::quit();
+#else
     const QString script = QDir(updateDir()).filePath(QStringLiteral("install.ps1"));
     QFile f(script);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -262,4 +351,5 @@ void Updater::install(const QString& zipPath)
         return;
     }
     QApplication::quit();
+#endif
 }
