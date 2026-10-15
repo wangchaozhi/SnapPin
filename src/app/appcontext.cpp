@@ -280,7 +280,8 @@ void AppContext::startLongCapture(const QRect& globalRect)
     QScreen* screen = QGuiApplication::screenAt(globalRect.center());
     if (!screen)
         return;
-    m_scrollSession = new ScrollCaptureSession(m_platform.capturer.get(), screen, globalRect, this);
+    m_scrollSession = new ScrollCaptureSession(m_platform.capturer.get(), m_platform.wheelThrottle.get(), screen,
+                                               globalRect, this);
     connect(m_scrollSession, &ScrollCaptureSession::finished, this,
             [this](const QImage& image, const QRect& rect, FinishAction action) {
                 QTimer::singleShot(0, this, [this, image, rect, action] { handleCaptureResult(image, rect, action, nullptr); });

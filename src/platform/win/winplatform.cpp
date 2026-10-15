@@ -20,6 +20,7 @@ Platform createPlatform()
     p.capturer = std::make_unique<WinScreenCapturer>();
     p.windowFinder = std::make_unique<WinWindowFinder>();
     p.hotkeys = std::make_unique<WinHotkeyManager>();
+    p.wheelThrottle = std::make_unique<WinWheelThrottle>();
     return p;
 }
 

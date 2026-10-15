@@ -14,6 +14,10 @@
 namespace {
 
 constexpr int kIntervalMs = 50;
+constexpr int kReplayTimeoutMs = 600; // 重放后这么久画面仍没动，视为已到顶/到底
+constexpr int kWheelNotch = 120;        // 一格滚轮
+constexpr int kMinReplayStep = 30;
+constexpr int kMaxReplayStep = kWheelNotch * 3;
 constexpr int kFrameMargin = 3;     // 边框画在选区外，不会被截进去
 constexpr int kScrollbarIgnore = 24; // 逻辑像素：右侧滚动条区域不参与匹配
 constexpr int kPreviewW = 150;
@@ -56,10 +60,11 @@ protected:
 
 } // namespace
 
-ScrollCaptureSession::ScrollCaptureSession(IScreenCapturer* capturer, QScreen* screen, const QRect& globalRect,
-                                           QObject* parent)
+ScrollCaptureSession::ScrollCaptureSession(IScreenCapturer* capturer, IWheelThrottle* throttle, QScreen* screen,
+                                           const QRect& globalRect, QObject* parent)
     : QObject(parent)
     , m_capturer(capturer)
+    , m_throttle(throttle)
     , m_screen(screen)
     , m_globalRect(globalRect)
     , m_dpr(screen->devicePixelRatio())
@@ -100,6 +105,9 @@ void ScrollCaptureSession::start()
     m_panel->move(pos);
     m_panel->show();
 
+    // 接管选区内的滚轮：滚得再快也按“滚一步 → 停稳 → 拼接”的节奏回放
+    m_throttleActive = m_throttle->start(m_screen, m_physRect);
+
     // 等遮罩从屏幕上消失后再开始截取
     QTimer::singleShot(200, this, [this] {
         tick();
@@ -116,7 +124,7 @@ QWidget* ScrollCaptureSession::createPanel()
         "#ScrollPanel{background:#fafafa;border:1px solid #b8b8b8;}"
         "QPushButton{padding:4px 8px;}"));
 
-    auto* hint = new QLabel(tr("在选区内上下滚动鼠标滚轮\n新内容会自动拼接"), panel);
+    auto* hint = new QLabel(tr("在选区内上下滚动鼠标滚轮\n新内容会自动拼接，滚多快都行"), panel);
     hint->setAlignment(Qt::AlignCenter);
     m_preview = new QLabel(panel);
     m_preview->setFixedSize(kPreviewW, kPreviewH);
@@ -171,20 +179,62 @@ void ScrollCaptureSession::tick()
         m_pendingUsed = false;
         return;
     }
-    if (m_pendingUsed)
-        return;
-    m_pendingUsed = true;
-    const auto result = m_stitcher.add(frame);
-    static const QString dumpDir = qEnvironmentVariable("SNAPPIN_SCROLL_DUMP"); // 调试：保存每一帧
-    if (!dumpDir.isEmpty()) {
-        static int n = 0;
-        frame.save(QStringLiteral("%1/f%2_r%3_dy%4.png").arg(dumpDir).arg(n++, 3, 10, QLatin1Char('0'))
-                       .arg(int(result)).arg(m_stitcher.lastScroll()));
+    if (!m_pendingUsed) {
+        m_pendingUsed = true;
+        const auto result = m_stitcher.add(frame);
+        if (result == ScrollStitcher::Result::Appended || result == ScrollStitcher::Result::Moved) {
+            if (m_awaitingResponse)
+                adaptReplayStep();
+            m_awaitingResponse = false;
+        }
+        if (result == ScrollStitcher::Result::Full)
+            m_timer.stop();
+        if (result != ScrollStitcher::Result::Unchanged)
+            updatePanel(result);
     }
-    if (result == ScrollStitcher::Result::Full)
-        m_timer.stop();
-    if (result != ScrollStitcher::Result::Unchanged)
-        updatePanel(result);
+    replayNextStep();
+}
+
+void ScrollCaptureSession::replayNextStep()
+{
+    if (!m_throttleActive)
+        return;
+    // 画面已停稳且拼接过：上一步已生效，或等了足够久仍没动（到顶 / 到底），放出下一步
+    if (m_awaitingResponse && m_sinceReplay.elapsed() < kReplayTimeoutMs)
+        return;
+    m_awaitingResponse = false;
+    const int pending = m_throttle->pendingDelta();
+    if (pending != 0) {
+        m_lastReplayDelta = qMin(qAbs(pending), m_replayStep);
+        if (m_throttle->replay(m_replayStep)) {
+            m_awaitingResponse = true;
+            m_sinceReplay.restart();
+        }
+    }
+    updateStatus();
+}
+
+void ScrollCaptureSession::adaptReplayStep()
+{
+    // 让每一步的滚动量不超过可视高度的 40%，保证前后两帧有足够重叠
+    const int px = qAbs(m_stitcher.lastScroll());
+    const int viewH = m_stitcher.currentView().height();
+    if (px <= 0 || m_lastReplayDelta <= 0 || viewH <= 0)
+        return;
+    const double pxPerUnit = double(px) / m_lastReplayDelta;
+    m_replayStep = qBound(kMinReplayStep, int(viewH * 0.4 / pxPerUnit), kMaxReplayStep);
+}
+
+void ScrollCaptureSession::updateStatus()
+{
+    QString text = m_statusBase;
+    const int pending = m_throttleActive ? qAbs(m_throttle->pendingDelta()) : 0;
+    if (pending > 0)
+        text += tr("\n正在跟上滚动，剩余 %1 格").arg((pending + kWheelNotch - 1) / kWheelNotch);
+    else if (m_awaitingResponse)
+        text += tr("\n正在跟上滚动…"); // 最后一步还在滚动中
+    if (text != m_status->text())
+        m_status->setText(text);
 }
 
 void ScrollCaptureSession::updatePanel(ScrollStitcher::Result r)
@@ -204,12 +254,12 @@ void ScrollCaptureSession::updatePanel(ScrollStitcher::Result r)
     }
     m_preview->setPixmap(QPixmap::fromImage(part.scaled(m_preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
 
-    QString status = tr("已拼接 %1 px").arg(totalH);
+    m_statusBase = tr("已拼接 %1 px").arg(totalH);
     if (r == ScrollStitcher::Result::NoMatch)
-        status += tr("\n未能接上，请慢一点滚动");
+        m_statusBase += tr("\n未能接上，请往回滚一点");
     else if (r == ScrollStitcher::Result::Full)
-        status += tr("\n已达到最大高度");
-    m_status->setText(status);
+        m_statusBase += tr("\n已达到最大高度");
+    updateStatus();
 }
 
 void ScrollCaptureSession::finish(FinishAction action)
@@ -232,6 +282,8 @@ void ScrollCaptureSession::close()
         return;
     m_closed = true;
     m_timer.stop();
+    m_throttle->stop();
+    m_throttleActive = false;
     if (m_frame)
         m_frame->hide();
     if (m_panel)

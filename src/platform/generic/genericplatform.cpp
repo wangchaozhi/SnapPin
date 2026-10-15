@@ -30,6 +30,7 @@ Platform createPlatform()
     p.capturer = std::make_unique<QtScreenCapturer>();
     p.windowFinder = std::make_unique<NullWindowFinder>();
     p.hotkeys = std::make_unique<NullHotkeyManager>();
+    p.wheelThrottle = std::make_unique<IWheelThrottle>(); // 不接管滚轮
     return p;
 }
 

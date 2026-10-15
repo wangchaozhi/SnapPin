@@ -52,10 +52,23 @@ signals:
     void activated(const QString& actionId);
 };
 
+// 长截图：接管选区内的滚轮输入，由调用方按节奏重放，保证每一步滚动都能拼接上
+class IWheelThrottle {
+public:
+    virtual ~IWheelThrottle() = default;
+    // localPhysRect：选区在该屏截图中的物理像素矩形。不支持时返回 false（滚轮照常直达程序）
+    virtual bool start(QScreen* screen, const QRect& localPhysRect) { Q_UNUSED(screen) Q_UNUSED(localPhysRect) return false; }
+    virtual void stop() {}
+    virtual int pendingDelta() const { return 0; } // 已拦截尚未重放的滚轮量，正数向上
+    // 重放不超过 maxDelta 的滚轮量；光标已离开选区时丢弃队列并返回 false
+    virtual bool replay(int maxDelta) { Q_UNUSED(maxDelta) return false; }
+};
+
 struct Platform {
     std::unique_ptr<IScreenCapturer> capturer;
     std::unique_ptr<IWindowFinder> windowFinder;
     std::unique_ptr<IHotkeyManager> hotkeys;
+    std::unique_ptr<IWheelThrottle> wheelThrottle;
 };
 
 // 抽象工厂：由各平台的实现文件提供（CMake 按平台选择编译）

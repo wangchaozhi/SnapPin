@@ -4,6 +4,7 @@
 
 #include <QAbstractNativeEventFilter>
 #include <QHash>
+#include <thread>
 
 #include <windows.h>
 
@@ -61,6 +62,21 @@ public:
 private:
     QHash<int, QString> m_ids;
     int m_nextId = 1;
+};
+
+// 低级鼠标钩子运行在独立线程（主线程忙于截图拼接时钩子也不会超时被系统摘除）。
+// 选区内的滚轮事件被吞掉并累计，replay() 用 SendInput 注入并打上标记，钩子据此放行
+class WinWheelThrottle : public IWheelThrottle {
+public:
+    ~WinWheelThrottle() override;
+    bool start(QScreen* screen, const QRect& localPhysRect) override;
+    void stop() override;
+    int pendingDelta() const override;
+    bool replay(int maxDelta) override;
+
+private:
+    std::thread m_thread;
+    DWORD m_threadId = 0;
 };
 
 // 屏幕在虚拟桌面中的物理像素矩形（进程为 Per-Monitor DPI Aware V2，Win32 坐标即物理像素）
