@@ -40,7 +40,10 @@ int main(int argc, char* argv[])
     QObject::connect(&server, &QLocalServer::newConnection, &server, [&server, &ctx] {
         while (QLocalSocket* s = server.nextPendingConnection()) {
             QObject::connect(s, &QLocalSocket::readyRead, s, [s, &ctx] {
-                ctx.actions().trigger(QString::fromUtf8(s->readAll()).trimmed());
+                // 排队执行：动作可能跑嵌套事件循环（如 Wayland 下等 portal 截图），
+                // 期间客户端断开会删掉 s，不能还在 s 的信号里
+                const QString action = QString::fromUtf8(s->readAll()).trimmed();
+                QTimer::singleShot(0, &ctx, [&ctx, action] { ctx.actions().trigger(action); });
             });
             QObject::connect(s, &QLocalSocket::disconnected, s, &QObject::deleteLater);
         }

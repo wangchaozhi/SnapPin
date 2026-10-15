@@ -85,7 +85,8 @@ QPixmap PortalScreenCapturer::grab(QScreen* screen)
 {
     if (m_busy) // 等待 portal 时嵌套的事件循环里又触发了截图
         return {};
-    if (m_desktop.isNull() || !m_desktopAge.isValid() || m_desktopAge.elapsed() > kReuseMs) {
+    // 失败（用户拒绝、超时）也复用，否则多屏时每个屏幕都会再弹一次授权框
+    if (!m_desktopAge.isValid() || m_desktopAge.elapsed() > kReuseMs) {
         m_busy = true;
         m_desktop = requestDesktop();
         m_busy = false;
