@@ -25,6 +25,8 @@ jobs:
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.0'
+          # 旧版 aqtinstall 不认识 Qt 6.12 的仓库结构（Windows 包按编译器拆分）
+          aqtversion: '==3.3.*'
           arch: win64_msvc2022_64
           cache: true
 
@@ -75,6 +77,8 @@ jobs:
           # 6.8.3 的 CMake 仍链接 AGL 框架，新版 Xcode 的 SDK 已移除它；
           # 6.12 之前的托盘在 macOS 27 上读取非鼠标事件的 clickCount，反复点击托盘图标会闪退
           version: '6.12.0'
+          # 旧版 aqtinstall 不认识 Qt 6.12 的仓库结构（Windows 包按编译器拆分）
+          aqtversion: '==3.3.*'
           host: mac
           target: desktop
           arch: clang_64
@@ -152,6 +156,8 @@ jobs:
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.0'
+          # 旧版 aqtinstall 不认识 Qt 6.12 的仓库结构（Windows 包按编译器拆分）
+          aqtversion: '==3.3.*'
           host: linux
           target: desktop
           arch: linux_gcc_64
@@ -179,8 +185,9 @@ jobs:
           wget -q $base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q $base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy*.AppImage
-          # 同时打包 X11（xcb）和 Wayland 平台插件，运行时由 Qt 按会话类型选择
-          EXTRA_PLATFORM_PLUGINS=libqwayland-generic.so \
+          # 同时打包 X11（xcb）和 Wayland 平台插件，运行时由 Qt 按会话类型选择；
+          # Qt 6.12 起 Wayland 客户端并入 qtbase，平台插件合并为 libqwayland.so
+          EXTRA_PLATFORM_PLUGINS=libqwayland.so \
             ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
           mv SnapPin-*.AppImage "SnapPin-$v-linux-x86_64.AppImage"
 
