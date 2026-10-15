@@ -89,7 +89,8 @@ fail() { echo "failed $(date): $*"; rm -rf "$staging" "$zip"; open "$app"; exit 
 
 i=0
 while kill -0 "$pid" 2>/dev/null; do
-    i=$((i + 1)); [ $i -gt 150 ] && fail "old process did not exit"
+    # 旧进程还在运行，不再启动（否则单实例会把启动转成一次截图）
+    i=$((i + 1)); [ $i -gt 150 ] && { echo "failed $(date): old process did not exit"; exit 1; }
     sleep 0.2
 done
 
@@ -154,7 +155,8 @@ fail() { echo "failed $(date): $*"; rm -f "$tmp" "$new"; nohup "$target" >/dev/n
 
 i=0
 while kill -0 "$pid" 2>/dev/null; do
-    i=$((i + 1)); [ $i -gt 150 ] && fail "old process did not exit"
+    # 旧进程还在运行，不再启动（否则单实例会把启动转成一次截图）
+    i=$((i + 1)); [ $i -gt 150 ] && { echo "failed $(date): old process did not exit"; exit 1; }
     sleep 0.2
 done
 
