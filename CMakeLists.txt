@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.21)
 
 # 发布构建由 CI 根据 tag（v1.2.3）传入版本号
-set(SNAPPIN_VERSION "0.1.0" CACHE STRING "Application version")
+set(SNAPPIN_VERSION "0.1.1" CACHE STRING "Application version")
 # 自动更新从这个仓库的 GitHub Releases 获取新版本
 set(SNAPPIN_GITHUB_REPO "wangchaozhi/SnapPin" CACHE STRING "owner/repo for update checks")
+# 版本号错了自动更新会反复提示，宁可构建失败
+if(NOT SNAPPIN_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "SNAPPIN_VERSION must look like 1.2.3, got '${SNAPPIN_VERSION}'")
+endif()
 
 project(SnapPin VERSION ${SNAPPIN_VERSION} LANGUAGES CXX)
 

@@ -29,7 +29,8 @@ jobs:
           cache: true
 
       - name: Configure
-        run: cmake -S . -B build -A x64 -DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}
+        # 加引号：pwsh 会把未加引号的 -DX=0.1.0 在点号处拆开
+        run: cmake -S . -B build -A x64 "-DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}"
 
       - name: Build
         run: cmake --build build --config Release --parallel
