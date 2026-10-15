@@ -72,8 +72,9 @@ jobs:
 
       - uses: jurplel/install-qt-action@v4
         with:
-          # 6.8.3 的 CMake 仍链接 AGL 框架，新版 Xcode 的 SDK 已移除它
-          version: '6.10.2'
+          # 6.8.3 的 CMake 仍链接 AGL 框架，新版 Xcode 的 SDK 已移除它；
+          # 6.12 之前的托盘在 macOS 27 上读取非鼠标事件的 clickCount，反复点击托盘图标会闪退
+          version: '6.12.0'
           host: mac
           target: desktop
           arch: clang_64
