@@ -78,7 +78,11 @@ QString bundlePath()
     return dir.absolutePath().endsWith(QLatin1String(".app")) ? dir.absolutePath() : QString();
 }
 
-// 等待旧进程退出 → 解压 → 校验新包的签名与当前程序一致 → 替换 .app（失败回滚）→ 启动新版本；失败时启动原程序
+// 等待旧进程退出 → 解压 → 校验新包的签名与当前程序一致 → 替换 .app（失败回滚）→ 启动新版本；失败时启动原程序。
+// - 旧进程 30 秒内没退出时不再启动程序（否则单实例会把启动转成一次截图）
+// - 程序自己下载的文件不带隔离属性，保险起见仍清除，避免 Gatekeeper 拦截
+// - 新包必须满足当前程序的签名要求（同一证书、同一 bundle ID），系统权限才能延续，也防止被替换成别人签名的程序
+// 注意：脚本里不能有以 # 开头的行（shebang 除外），MSVC 会把 #ifdef 排除的原始字符串里的这种行当作预处理指令
 const char* const kInstallScript = R"SH(#!/bin/sh
 pid=$1; zip=$2; app=$3
 dir=$(dirname "$zip")
@@ -89,7 +93,6 @@ fail() { echo "failed $(date): $*"; rm -rf "$staging" "$zip"; open "$app"; exit 
 
 i=0
 while kill -0 "$pid" 2>/dev/null; do
-    # 旧进程还在运行，不再启动（否则单实例会把启动转成一次截图）
     i=$((i + 1)); [ $i -gt 150 ] && { echo "failed $(date): old process did not exit"; exit 1; }
     sleep 0.2
 done
@@ -98,9 +101,7 @@ rm -rf "$staging"
 ditto -x -k "$zip" "$staging" || fail "cannot extract $zip"
 new=$(find "$staging" -maxdepth 1 -name '*.app' | head -n 1)
 [ -n "$new" ] || fail "no .app in $zip"
-# 程序自己下载的文件不带隔离属性，保险起见仍清除，避免 Gatekeeper 拦截
 xattr -dr com.apple.quarantine "$new" 2>/dev/null
-# 新包必须满足当前程序的签名要求（同一证书、同一 bundle ID），系统权限才能延续，也防止被替换成别人签名的程序
 req=$(codesign -d -r- "$app" 2>/dev/null | sed -n 's/^designated => //p')
 [ -n "$req" ] || fail "cannot read designated requirement of $app"
 codesign --verify --deep --strict -R="$req" "$new" || fail "signature of new version does not match"
@@ -145,7 +146,7 @@ QString appImagePath()
 }
 
 // 等待旧进程退出 → 复制到 AppImage 同目录 → 改名覆盖（原子替换，文件名不变，快捷方式继续有效）→ 启动新版本；
-// 失败时启动原程序
+// 失败时启动原程序；旧进程 30 秒内没退出时不再启动。脚本里同样不能有以 # 开头的行
 const char* const kInstallScript = R"SH(#!/bin/sh
 pid=$1; new=$2; target=$3
 dir=$(dirname "$new")
@@ -155,7 +156,6 @@ fail() { echo "failed $(date): $*"; rm -f "$tmp" "$new"; nohup "$target" >/dev/n
 
 i=0
 while kill -0 "$pid" 2>/dev/null; do
-    # 旧进程还在运行，不再启动（否则单实例会把启动转成一次截图）
     i=$((i + 1)); [ $i -gt 150 ] && { echo "failed $(date): old process did not exit"; exit 1; }
     sleep 0.2
 done
