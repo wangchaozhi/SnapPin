@@ -9,6 +9,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QWheelEvent>
+#include <QWindow>
 
 PinWindow::PinWindow(const QImage& image)
     : QWidget(nullptr, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool)
@@ -38,7 +39,7 @@ void PinWindow::setScale(qreal scale, const QPoint& anchorGlobal)
         move(anchorGlobal - offset.toPoint());
     }
     m_scale = scale;
-    resize(newSize);
+    setFixedSize(newSize); // 固定尺寸：sway 等平铺式合成器才会让它浮动，而不是铺满整个工作区
     setToolTip(tr("缩放 %1%").arg(qRound(m_scale * 100)));
     update();
 }
@@ -62,8 +63,15 @@ void PinWindow::mousePressEvent(QMouseEvent* e)
 
 void PinWindow::mouseMoveEvent(QMouseEvent* e)
 {
-    if (m_dragging)
-        move(e->globalPosition().toPoint() - m_dragOffset);
+    if (!m_dragging)
+        return;
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+        // Wayland 不允许程序自己摆放窗口，交给合成器拖动（放在移动时而不是按下时，双击关闭才不受影响）
+        m_dragging = false;
+        windowHandle()->startSystemMove();
+        return;
+    }
+    move(e->globalPosition().toPoint() - m_dragOffset);
 }
 
 void PinWindow::mouseReleaseEvent(QMouseEvent* e)
