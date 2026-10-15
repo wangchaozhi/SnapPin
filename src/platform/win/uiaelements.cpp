@@ -1,5 +1,6 @@
 #include "winplatform.h"
 
+#include <ole2.h> // WIN32_LEAN_AND_MEAN 去掉了 COM 声明，MSVC 的 UIAutomation 头文件需要它
 #include <uiautomation.h>
 #include <wrl/client.h>
 

@@ -8,6 +8,7 @@
 #include <thread>
 
 #include <dwmapi.h>
+#include <objbase.h> // CoInitializeEx（WIN32_LEAN_AND_MEAN 下 windows.h 不包含）
 
 namespace {
 
