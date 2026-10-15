@@ -102,6 +102,11 @@ void setupFloatingWindow(QWidget* window, FloatingLayer layer)
     }
 }
 
+bool scrollCaptureSupported()
+{
+    return !isWayland(); // portal 截一次屏要几十毫秒（GNOME 还会存文件、闪屏），窗口也无法自己定位
+}
+
 // 开机自启：XDG autostart 规范，GNOME、KDE、Xfce 等都支持
 bool autostartSupported()
 {

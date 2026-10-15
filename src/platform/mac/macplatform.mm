@@ -126,6 +126,11 @@ bool macAccessibilityTrusted(bool prompt)
     return false;
 }
 
+bool scrollCaptureSupported()
+{
+    return true;
+}
+
 // 开机自启：~/Library/LaunchAgents 下的 plist，登录时由 launchd 启动
 bool autostartSupported()
 {

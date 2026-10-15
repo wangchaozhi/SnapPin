@@ -36,6 +36,7 @@ Platform createPlatform()
 
 void setupFloatingWindow(QWidget*, FloatingLayer) {}
 
+bool scrollCaptureSupported() { return true; }
 bool autostartSupported() { return false; }
 bool autostartEnabled() { return false; }
 bool setAutostartEnabled(bool) { return false; }

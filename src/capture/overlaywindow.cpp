@@ -402,7 +402,7 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
             finish(FinishAction::Pin);
             return;
         }
-        if (ctrl && e->key() == Qt::Key_L) {
+        if (ctrl && e->key() == Qt::Key_L && scrollCaptureSupported()) {
             finish(FinishAction::LongCapture);
             return;
         }

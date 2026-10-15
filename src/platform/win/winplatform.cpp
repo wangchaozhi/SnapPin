@@ -39,6 +39,11 @@ void setupFloatingWindow(QWidget*, FloatingLayer)
     // WindowStaysOnTopHint 在 Windows 上已经够用
 }
 
+bool scrollCaptureSupported()
+{
+    return true;
+}
+
 bool autostartSupported()
 {
     return true;

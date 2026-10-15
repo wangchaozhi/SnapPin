@@ -1,5 +1,7 @@
 #include "editortoolbar.h"
 
+#include "platform/platform.h"
+
 #include <QColorDialog>
 #include <QHBoxLayout>
 #include <QPainter>
@@ -99,8 +101,10 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
 
     layout->addWidget(separator(this));
 
-    connect(addButton(QStringLiteral("⇕"), tr("长截图：滚动选区内容自动拼接 (Ctrl+L)")), &QToolButton::clicked, this,
-            &EditorToolbar::longCaptureRequested);
+    if (scrollCaptureSupported()) {
+        connect(addButton(QStringLiteral("⇕"), tr("长截图：滚动选区内容自动拼接 (Ctrl+L)")), &QToolButton::clicked, this,
+                &EditorToolbar::longCaptureRequested);
+    }
     connect(addButton(QStringLiteral("📌"), tr("贴图 (Ctrl+T)")), &QToolButton::clicked, this, &EditorToolbar::pinRequested);
     connect(addButton(QStringLiteral("💾"), tr("保存 (Ctrl+S)")), &QToolButton::clicked, this, &EditorToolbar::saveRequested);
     connect(addButton(QStringLiteral("✕"), tr("取消 (Esc)")), &QToolButton::clicked, this, &EditorToolbar::cancelRequested);
