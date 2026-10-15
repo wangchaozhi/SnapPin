@@ -53,8 +53,67 @@ jobs:
           New-Item -ItemType File "$dir/snappin.portable" | Out-Null
           Compress-Archive -Path $dir -DestinationPath "SnapPin-$v-windows-x64.zip"
 
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
+      - uses: actions/upload-artifact@v4
         with:
-          files: SnapPin-*-windows-x64.zip
+          name: windows
+          path: SnapPin-*-windows-x64.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        run: |
+          ref='${{ github.ref_name }}'
+          if [[ $ref =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then v=${BASH_REMATCH[1]}; else v=0.0.0; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Configure
+        # 官方 Qt 是通用二进制，同时出 Apple 芯片和 Intel 版本
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          -DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          v='${{ steps.ver.outputs.version }}'
+          macdeployqt build/SnapPin.app
+          # 没有开发者证书，只做 ad-hoc 签名；首次打开需要在 Finder 里右键 > 打开
+          codesign --force --deep --sign - build/SnapPin.app
+          ditto -c -k --keepParent build/SnapPin.app "SnapPin-$v-macos-universal.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: SnapPin-*-macos-universal.zip
+
+  release:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: SnapPin-*.zip
           generate_release_notes: true

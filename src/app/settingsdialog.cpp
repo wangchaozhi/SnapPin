@@ -60,8 +60,13 @@ QWidget* SettingsDialog::createGeneralPage(const QString& historyDir)
     m_backend->addItem(tr("自动（DXGI 优先，失败时用 GDI）"), QStringLiteral("auto"));
     m_backend->addItem(tr("GDI（兼容性最好）"), QStringLiteral("gdi"));
     m_backend->setCurrentIndex(qMax(0, m_backend->findData(m_settings.captureBackend)));
+#ifdef Q_OS_WIN
     captureForm->addRow(tr("截屏方式："), m_backend);
     m_uia = new QCheckBox(tr("识别窗口内的界面元素（UI Automation）"), capture);
+#else
+    m_backend->hide(); // 其他平台只有一种截屏方式
+    m_uia = new QCheckBox(tr("识别窗口内的界面元素（需要辅助功能权限）"), capture);
+#endif
     m_uia->setChecked(m_settings.uiAutomation);
     m_uia->setToolTip(tr("可选中按钮、输入框等控件。复杂程序的识别结果会稍晚出现"));
     captureForm->addRow(m_uia);

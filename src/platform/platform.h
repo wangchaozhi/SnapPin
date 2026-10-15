@@ -9,6 +9,7 @@
 #include <memory>
 
 class QScreen;
+class QWidget;
 
 // 截屏：返回指定屏幕的整屏图像（物理像素，devicePixelRatio 设为该屏缩放比例）
 class IScreenCapturer {
@@ -77,6 +78,14 @@ struct Platform {
 
 // 抽象工厂：由各平台的实现文件提供（CMake 按平台选择编译）
 Platform createPlatform();
+
+// 置顶窗口的层级。macOS 上 Qt 的 WindowStaysOnTopHint 盖不住菜单栏和全屏应用，需要平台单独设置
+enum class FloatingLayer {
+    Pin,     // 贴图：浮在普通窗口之上，跟随所有桌面空间
+    Overlay, // 截图遮罩、长截图边框和面板：盖住菜单栏和 Dock
+};
+// 在窗口构造时调用一次；层级在每次显示时生效。Overlay 显示时会把本程序切到前台（除非窗口不接受焦点）
+void setupFloatingWindow(QWidget* window, FloatingLayer layer);
 
 // 开机自启
 bool autostartSupported();

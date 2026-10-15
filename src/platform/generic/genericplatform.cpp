@@ -1,5 +1,5 @@
-// 非 Windows 平台的临时实现：用 Qt 自带接口截屏，暂不支持窗口识别、全局快捷键和开机自启。
-// 后续按平台替换为 ScreenCaptureKit (macOS)、XShm/xdg-desktop-portal (Linux) 等原生实现。
+// 其他平台（Linux 等）的临时实现：用 Qt 自带接口截屏，暂不支持窗口识别、全局快捷键和开机自启。
+// 后续替换为 XShm/xdg-desktop-portal 等原生实现。
 #include "platform/platform.h"
 
 #include <QScreen>
@@ -33,6 +33,8 @@ Platform createPlatform()
     p.wheelThrottle = std::make_unique<IWheelThrottle>(); // 不接管滚轮
     return p;
 }
+
+void setupFloatingWindow(QWidget*, FloatingLayer) {}
 
 bool autostartSupported() { return false; }
 bool autostartEnabled() { return false; }

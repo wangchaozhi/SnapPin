@@ -34,6 +34,11 @@ QPixmap WinScreenCapturer::grab(QScreen* screen)
     return m_gdi.grab(screen);
 }
 
+void setupFloatingWindow(QWidget*, FloatingLayer)
+{
+    // WindowStaysOnTopHint 在 Windows 上已经够用
+}
+
 bool autostartSupported()
 {
     return true;

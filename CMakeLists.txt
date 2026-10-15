@@ -9,7 +9,13 @@ if(NOT SNAPPIN_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "SNAPPIN_VERSION must look like 1.2.3, got '${SNAPPIN_VERSION}'")
 endif()
 
+# ScreenCaptureKit 的截图接口需要 macOS 14；必须在 project() 之前设置
+set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
+
 project(SnapPin VERSION ${SNAPPIN_VERSION} LANGUAGES CXX)
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,6 +63,15 @@ if(WIN32)
         src/platform/win/winhotkeymanager.cpp
         src/platform/win/winwheelthrottle.cpp
     )
+elseif(APPLE)
+    set(PLATFORM_SOURCES
+        src/platform/mac/macplatform.h
+        src/platform/mac/macplatform.mm
+        src/platform/mac/maccapturer.mm
+        src/platform/mac/macwindowfinder.mm
+        src/platform/mac/machotkeymanager.mm
+        src/platform/mac/macwheelthrottle.mm
+    )
 else()
     set(PLATFORM_SOURCES src/platform/generic/genericplatform.cpp)
 endif()
@@ -82,4 +97,19 @@ endif()
 if(WIN32)
     target_compile_definitions(SnapPin PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(SnapPin PRIVATE user32 gdi32 dwmapi d3d11 dxgi ole32 oleaut32)
+endif()
+
+if(APPLE)
+    set_target_properties(SnapPin PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/macos/Info.plist.in
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.github.wangchaozhi.SnapPin
+        MACOSX_BUNDLE_BUNDLE_NAME SnapPin
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    )
+    target_compile_options(SnapPin PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_link_libraries(SnapPin PRIVATE
+        "-framework AppKit" "-framework ApplicationServices" "-framework Carbon"
+        "-framework CoreGraphics" "-framework ScreenCaptureKit"
+    )
 endif()

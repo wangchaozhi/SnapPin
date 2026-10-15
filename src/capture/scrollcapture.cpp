@@ -78,6 +78,7 @@ public:
     {
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
+        setupFloatingWindow(this, FloatingLayer::Overlay);
     }
 
 protected:
@@ -150,6 +151,7 @@ QWidget* ScrollCaptureSession::createPanel()
 {
     auto* panel = new QWidget(nullptr, kOverlayFlags);
     panel->setAttribute(Qt::WA_ShowWithoutActivating); // 不抢走目标程序的焦点
+    setupFloatingWindow(panel, FloatingLayer::Overlay);
     panel->setObjectName(QStringLiteral("ScrollPanel"));
     panel->setStyleSheet(QStringLiteral(
         "#ScrollPanel{background:#fafafa;border:1px solid #b8b8b8;}"

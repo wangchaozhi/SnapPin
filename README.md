@@ -1,6 +1,6 @@
 # SnapPin
 
-用 Qt 6 复刻 [Snipaste](https://www.snipaste.com/) 的截图 + 贴图工具（Windows）。
+用 Qt 6 复刻 [Snipaste](https://www.snipaste.com/) 的截图 + 贴图工具（Windows / macOS）。
 
 ## 功能
 
@@ -19,12 +19,21 @@
 | Shift+F3 | 隐藏 / 显示所有贴图 |
 
 截图时：双击 / 回车 / Ctrl+C 复制，Ctrl+S 保存，Ctrl+T 贴图，Ctrl+L 长截图，Esc 取消。
+macOS 上文中的 Ctrl 均为 Command；F 键在 Mac 键盘上可能需要按住 fn。
 贴图上：滚轮缩放，Ctrl+滚轮透明度，空格编辑，双击 / Esc 关闭。
 
 ## 安装
 
 从 [Releases](https://github.com/wangchaozhi/SnapPin/releases) 下载 `SnapPin-x.y.z-windows-x64.zip`，解压后运行 `SnapPin.exe`。
 新版本发布后程序会提示更新，确认后自动下载、替换并重启。
+
+macOS（14 及以上）下载 `SnapPin-x.y.z-macos-universal.zip`，解压后把 `SnapPin.app` 拖到“应用程序”。
+安装包没有开发者签名，第一次需要在 Finder 里右键 > 打开。程序需要两项权限（系统设置 > 隐私与安全性）：
+
+- **屏幕录制**：截屏必需，没有时只能截到桌面壁纸
+- **辅助功能**：识别窗口内的控件、长截图时接管滚动；不授权时这两项退化为只识别窗口、直接滚动
+
+macOS 版暂不支持自动安装更新，有新版本时会打开发布页。
 
 ## 构建
 
@@ -36,13 +45,25 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
+macOS 上可以用 Homebrew 的 Qt：
+
+```bash
+brew install qt cmake ninja
+cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
+cmake --build build
+open build/SnapPin.app
+```
+
+开发构建是 ad-hoc 签名，每次重新编译后系统都会把它当作新程序，需要重新授予屏幕录制和辅助功能权限
+（在设置里先删掉旧的 SnapPin 条目再添加）。
+
 推送 `v*` 标签会触发 GitHub Actions 构建并发布 Release。
 
 ## 代码结构
 
 | 目录 | 内容 |
 |---|---|
-| `src/platform` | 平台接口与 Windows 实现（DXGI / GDI 截屏、窗口与控件识别、全局快捷键） |
+| `src/platform` | 平台接口；Windows 实现（DXGI / GDI 截屏、UI Automation、全局快捷键）与 macOS 实现（ScreenCaptureKit、CGWindowList + 辅助功能、Carbon 快捷键、CGEventTap） |
 | `src/capture` | 截图遮罩（状态模式）、工具栏、长截图拼接 |
 | `src/annotation` | 标注图形、工具（策略模式）、撤销栈（命令模式） |
 | `src/pin` | 贴图窗口与管理 |

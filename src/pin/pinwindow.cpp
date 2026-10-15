@@ -1,6 +1,7 @@
 #include "pinwindow.h"
 
 #include "app/imageutil.h"
+#include "platform/platform.h"
 
 #include <QClipboard>
 #include <QContextMenuEvent>
@@ -15,6 +16,7 @@ PinWindow::PinWindow(const QImage& image)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setFocusPolicy(Qt::StrongFocus);
+    setupFloatingWindow(this, FloatingLayer::Pin);
     setScale(1.0, QPoint());
 }
 

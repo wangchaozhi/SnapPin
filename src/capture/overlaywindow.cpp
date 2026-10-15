@@ -28,6 +28,7 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     setFocusPolicy(Qt::StrongFocus);
     setScreen(screen);
     setGeometry(screen->geometry());
+    setupFloatingWindow(this, FloatingLayer::Overlay);
 
     m_renderCtx.source = &m_shot;
     m_toolCtx.doc = &m_doc;
