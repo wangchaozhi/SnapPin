@@ -4,8 +4,10 @@
 
 #include <QEvent>
 #include <QGridLayout>
+#include <QGuiApplication>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QStyleHints>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -24,16 +26,34 @@ ColorPalette::ColorPalette(QWidget* parent)
 {
     setObjectName(QStringLiteral("ColorPalette"));
     setCursor(Qt::ArrowCursor);
-    setStyleSheet(QStringLiteral(
-        "#ColorPalette{background:#fbfbfb;border:1px solid #c6c6c6;border-radius:6px;}"
-        "QToolButton{border:none;border-radius:5px;background:transparent;}"
-        "QToolButton:hover{background:#ececec;}"
-        "QToolButton:checked{background:#e3eeff;}"
-        "QPushButton{border:none;border-radius:4px;padding:4px 8px;color:#333;text-align:left;}"
-        "QPushButton:hover{background:#ececec;}"));
+    applyTheme();
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, &ColorPalette::applyTheme);
     hide();
     // 点击遮罩的其他地方时收起
     parent->installEventFilter(this);
+}
+
+void ColorPalette::applyTheme()
+{
+    // 和工具栏一样跟随系统深浅色主题
+    if (toolbarDarkMode()) {
+        setStyleSheet(QStringLiteral(
+            "#ColorPalette{background:#2b2d31;border:1px solid #3d4047;border-radius:6px;}"
+            "QToolButton{border:none;border-radius:5px;background:transparent;}"
+            "QToolButton:hover{background:#3a3d44;}"
+            "QToolButton:checked{background:#4a4d55;}"
+            "QPushButton{border:none;border-radius:4px;padding:4px 8px;color:#e4e4e7;text-align:left;}"
+            "QPushButton:hover{background:#3a3d44;}"));
+    } else {
+        setStyleSheet(QStringLiteral(
+            "#ColorPalette{background:#fbfbfb;border:1px solid #c6c6c6;border-radius:6px;}"
+            "QToolButton{border:none;border-radius:5px;background:transparent;}"
+            "QToolButton:hover{background:#ececec;}"
+            "QToolButton:checked{background:#eceaf7;}"
+            "QPushButton{border:none;border-radius:4px;padding:4px 8px;color:#333;text-align:left;}"
+            "QPushButton:hover{background:#ececec;}"));
+    }
+    update();
 }
 
 void ColorPalette::setCurrent(const QColor& color)

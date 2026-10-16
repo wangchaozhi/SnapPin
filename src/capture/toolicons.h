@@ -3,7 +3,7 @@
 #include <QColor>
 #include <QIcon>
 
-// 截图工具栏的图标：统一的线性风格，代码绘制的矢量图，任意缩放比例下都清晰
+// 截图工具栏的图标：统一的线性风格，每个工具一种马卡龙色，代码绘制的矢量图，任意缩放比例下都清晰
 enum class ToolIcon {
     Rect,
     Ellipse,
@@ -24,8 +24,11 @@ enum class ToolIcon {
     Copy,
 };
 
-// accent：始终用主题色绘制（主操作按钮）
-QIcon toolIcon(ToolIcon id, bool accent = false);
+// 系统是否是深色主题。工具栏和图标都跟着它：浅色主题是白底 + 马卡龙浅色填充、同色深描边，
+// 深色主题是深色底 + 马卡龙浅色线条。图标每次绘制时读取，主题切换后重绘即可
+bool toolbarDarkMode();
+
+QIcon toolIcon(ToolIcon id);
 // 线宽按钮：一条按比例显示粗细的横线
 QIcon widthIcon(qreal width);
 // 颜色按钮：圆形色块

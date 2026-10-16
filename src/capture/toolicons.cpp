@@ -1,9 +1,11 @@
 #include "toolicons.h"
 
+#include <QGuiApplication>
 #include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QStyleHints>
 #include <functional>
 
 namespace {
@@ -12,35 +14,60 @@ namespace {
 constexpr qreal kGrid = 20.0;
 constexpr qreal kStroke = 1.6;
 
-const QColor kNormal(0x3a, 0x3a, 0x3a);
-const QColor kDisabled(0xbd, 0xbd, 0xbd);
-const QColor kAccent(0x16, 0x77, 0xff);
+// 马卡龙配色（和应用图标同一套）：浅色用来填充 / 深色主题下的线条，深色用来描边
+struct Hue {
+    QColor light;
+    QColor deep;
+};
+const Hue kRed{QColor(0xFF, 0xAD, 0xAD), QColor(0xE0, 0x6C, 0x6C)};
+const Hue kPeach{QColor(0xFF, 0xD6, 0xA5), QColor(0xE0, 0x97, 0x4A)};
+const Hue kYellow{QColor(0xFD, 0xFF, 0xB6), QColor(0xB8, 0xB3, 0x47)};
+const Hue kMint{QColor(0xB9, 0xFB, 0xC0), QColor(0x3F, 0xAF, 0x5A)};
+const Hue kCyan{QColor(0x9B, 0xF6, 0xFF), QColor(0x2B, 0xAF, 0xC0)};
+const Hue kBlue{QColor(0xA0, 0xC4, 0xFF), QColor(0x5B, 0x8D, 0xEF)};
+const Hue kLavender{QColor(0xBD, 0xB2, 0xFF), QColor(0x8A, 0x7B, 0xEA)};
+const Hue kPink{QColor(0xFF, 0xC6, 0xFF), QColor(0xC7, 0x66, 0xC7)};
+const Hue kGray{QColor(0xE4, 0xE4, 0xE7), QColor(0x6B, 0x6B, 0x70)};
 
-using Drawer = std::function<void(QPainter&, const QColor&)>;
+const QColor kDisabledLight(0xbd, 0xbd, 0xbd);
+const QColor kDisabledDark(0x5a, 0x5d, 0x63);
+
+// 线条颜色 + 图形主体的填充（浅色主题下是浅色马卡龙，深色主题下不填充）
+struct Ink {
+    QColor line;
+    QBrush body;
+};
+using Drawer = std::function<void(QPainter&, const Ink&)>;
 
 class VectorIconEngine : public QIconEngine {
 public:
-    VectorIconEngine(Drawer draw, bool accent, bool fixedColors)
-        : m_draw(std::move(draw)), m_accent(accent), m_fixedColors(fixedColors) {}
+    // fixedColors：自带颜色的图标（色块、复制按钮），不按主题上色，禁用时整体变淡
+    VectorIconEngine(Drawer draw, Hue hue, bool fixedColors)
+        : m_draw(std::move(draw)), m_hue(std::move(hue)), m_fixedColors(fixedColors) {}
 
-    void paint(QPainter* p, const QRect& rect, QIcon::Mode mode, QIcon::State state) override
+    void paint(QPainter* p, const QRect& rect, QIcon::Mode mode, QIcon::State) override
     {
-        QColor color = kNormal;
-        if (mode == QIcon::Disabled)
-            color = kDisabled;
-        else if (m_accent || state == QIcon::On)
-            color = kAccent;
+        // 每次绘制时读系统主题，切换深浅色后工具栏重绘即可，不用重建图标
+        const bool dark = toolbarDarkMode();
+        Ink ink;
+        if (mode == QIcon::Disabled) {
+            ink.line = dark ? kDisabledDark : kDisabledLight;
+        } else {
+            ink.line = dark ? m_hue.light : m_hue.deep;
+            if (!dark)
+                ink.body = m_hue.light;
+        }
 
         p->save();
         p->setRenderHint(QPainter::Antialiasing);
         const qreal side = qMin(rect.width(), rect.height());
         p->translate(rect.x() + (rect.width() - side) / 2.0, rect.y() + (rect.height() - side) / 2.0);
         p->scale(side / kGrid, side / kGrid);
-        p->setPen(QPen(color, kStroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->setPen(QPen(ink.line, kStroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p->setBrush(Qt::NoBrush);
         if (m_fixedColors && mode == QIcon::Disabled)
             p->setOpacity(0.4);
-        m_draw(*p, color);
+        m_draw(*p, ink);
         p->restore();
     }
 
@@ -63,13 +90,22 @@ public:
 
 private:
     Drawer m_draw;
-    bool m_accent;
-    bool m_fixedColors; // 自带颜色的图标（色块）：禁用时整体变淡
+    Hue m_hue;
+    bool m_fixedColors;
 };
 
-QIcon makeIcon(Drawer draw, bool accent = false, bool fixedColors = false)
+QIcon makeIcon(Drawer draw, Hue hue = kGray, bool fixedColors = false)
 {
-    return QIcon(new VectorIconEngine(std::move(draw), accent, fixedColors));
+    return QIcon(new VectorIconEngine(std::move(draw), std::move(hue), fixedColors));
+}
+
+// 图形主体：浅色主题下用马卡龙浅色填充
+template <typename F>
+void body(QPainter& p, const Ink& ink, F draw)
+{
+    p.setBrush(ink.body);
+    draw();
+    p.setBrush(Qt::NoBrush);
 }
 
 QPainterPath polyline(std::initializer_list<QPointF> pts)
@@ -102,55 +138,59 @@ Drawer drawerFor(ToolIcon id)
 {
     switch (id) {
     case ToolIcon::Rect:
-        return [](QPainter& p, const QColor&) { p.drawRoundedRect(QRectF(3.5, 5.0, 13.0, 10.0), 1.5, 1.5); };
+        return [](QPainter& p, const Ink& ink) {
+            body(p, ink, [&] { p.drawRoundedRect(QRectF(3.5, 5.0, 13.0, 10.0), 1.5, 1.5); });
+        };
 
     case ToolIcon::Ellipse:
-        return [](QPainter& p, const QColor&) { p.drawEllipse(QPointF(10.0, 10.0), 7.0, 5.5); };
+        return [](QPainter& p, const Ink& ink) { body(p, ink, [&] { p.drawEllipse(QPointF(10.0, 10.0), 7.0, 5.5); }); };
 
     case ToolIcon::Line:
-        return [](QPainter& p, const QColor&) { p.drawLine(QPointF(4.5, 15.5), QPointF(15.5, 4.5)); };
+        return [](QPainter& p, const Ink&) { p.drawLine(QPointF(4.5, 15.5), QPointF(15.5, 4.5)); };
 
     case ToolIcon::Number:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 圆圈里的 1
-            p.drawEllipse(QPointF(10.0, 10.0), 7.0, 7.0);
+            body(p, ink, [&] { p.drawEllipse(QPointF(10.0, 10.0), 7.0, 7.0); });
             p.drawPath(polyline({{8.4, 7.6}, {10.4, 6.2}, {10.4, 13.8}}));
         };
 
     case ToolIcon::Arrow:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink&) {
             p.drawLine(QPointF(4.5, 15.5), QPointF(15.0, 5.0));
             p.drawPath(polyline({{9.0, 5.0}, {15.0, 5.0}, {15.0, 11.0}}));
         };
 
     case ToolIcon::Pen:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 斜放的铅笔：笔身 + 笔尖分界线
-            p.drawPath(polyline({{4.0, 16.0}, {4.8, 12.6}, {12.6, 4.8}, {15.2, 7.4}, {7.4, 15.2}, {4.0, 16.0}}));
+            body(p, ink, [&] {
+                p.drawPath(polyline({{4.0, 16.0}, {4.8, 12.6}, {12.6, 4.8}, {15.2, 7.4}, {7.4, 15.2}, {4.0, 16.0}}));
+            });
             p.drawLine(QPointF(11.0, 6.4), QPointF(13.6, 9.0));
         };
 
     case ToolIcon::Marker:
-        return [](QPainter& p, const QColor& c) {
+        return [](QPainter& p, const Ink& ink) {
             // 荧光笔：斜头笔身 + 下方一道半透明的粗笔迹
-            p.drawPath(polyline({{6.6, 12.6}, {12.4, 4.6}, {15.4, 6.8}, {9.6, 14.8}, {6.6, 12.6}}));
+            body(p, ink, [&] { p.drawPath(polyline({{6.6, 12.6}, {12.4, 4.6}, {15.4, 6.8}, {9.6, 14.8}, {6.6, 12.6}})); });
             p.drawPath(polyline({{6.6, 12.6}, {5.6, 15.2}, {9.6, 14.8}}));
-            QColor ink = c;
-            ink.setAlphaF(0.35);
+            QColor trail = ink.line;
+            trail.setAlphaF(0.35);
             p.save();
-            p.setPen(QPen(ink, 2.6, Qt::SolidLine, Qt::RoundCap));
+            p.setPen(QPen(trail, 2.6, Qt::SolidLine, Qt::RoundCap));
             p.drawLine(QPointF(4.0, 17.6), QPointF(16.0, 17.6));
             p.restore();
         };
 
     case ToolIcon::Mosaic:
-        return [](QPainter& p, const QColor& c) {
+        return [](QPainter& p, const Ink& ink) {
             // 4×4 棋盘格：像素化的效果（3×3 隔格填充看起来像骰子）
             const QRectF box(4.0, 4.0, 12.0, 12.0);
-            p.drawRoundedRect(box, 1.2, 1.2);
+            body(p, ink, [&] { p.drawRoundedRect(box, 1.2, 1.2); });
             p.save();
             p.setPen(Qt::NoPen);
-            p.setBrush(c);
+            p.setBrush(ink.line);
             const qreal cell = box.width() / 4;
             for (int r = 0; r < 4; ++r) {
                 for (int col = 0; col < 4; ++col) {
@@ -162,21 +202,23 @@ Drawer drawerFor(ToolIcon id)
         };
 
     case ToolIcon::Eraser:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 斜放的橡皮：外框 + 擦头分界线 + 底部一条擦过的痕迹
-            p.drawPath(polyline({{8.2, 15.5}, {3.6, 10.9}, {10.6, 3.9}, {16.4, 9.7}, {10.6, 15.5}, {8.2, 15.5}}));
+            body(p, ink, [&] {
+                p.drawPath(polyline({{8.2, 15.5}, {3.6, 10.9}, {10.6, 3.9}, {16.4, 9.7}, {10.6, 15.5}, {8.2, 15.5}}));
+            });
             p.drawLine(QPointF(6.9, 7.6), QPointF(12.7, 13.4));
             p.drawLine(QPointF(10.6, 15.5), QPointF(16.5, 15.5));
         };
 
     case ToolIcon::Fill:
-        return [](QPainter& p, const QColor& c) {
+        return [](QPainter& p, const Ink& ink) {
             // 圆角方块，右下半边填充
             const QRectF box(4.0, 4.0, 12.0, 12.0);
             p.drawRoundedRect(box, 1.5, 1.5);
             p.save();
             p.setPen(Qt::NoPen);
-            p.setBrush(c);
+            p.setBrush(ink.line);
             QPainterPath half;
             half.addRoundedRect(box, 1.5, 1.5);
             QPainterPath tri;
@@ -186,77 +228,116 @@ Drawer drawerFor(ToolIcon id)
         };
 
     case ToolIcon::Text:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink&) {
             p.drawPath(polyline({{5.0, 6.5}, {5.0, 4.5}, {15.0, 4.5}, {15.0, 6.5}}));
             p.drawLine(QPointF(10.0, 4.5), QPointF(10.0, 15.5));
             p.drawLine(QPointF(7.8, 15.5), QPointF(12.2, 15.5));
         };
 
     case ToolIcon::Undo:
-        return [](QPainter& p, const QColor&) { drawUndo(p); };
+        return [](QPainter& p, const Ink&) { drawUndo(p); };
 
     case ToolIcon::Redo:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink&) {
             p.translate(kGrid, 0);
             p.scale(-1, 1);
             drawUndo(p);
         };
 
     case ToolIcon::LongCapture:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 竖长的页面 + 上下双向箭头
-            p.drawRoundedRect(QRectF(5.5, 2.5, 9.0, 15.0), 1.5, 1.5);
+            body(p, ink, [&] { p.drawRoundedRect(QRectF(5.5, 2.5, 9.0, 15.0), 1.5, 1.5); });
             p.drawLine(QPointF(10.0, 6.5), QPointF(10.0, 13.5));
             p.drawPath(polyline({{8.0, 8.3}, {10.0, 6.3}, {12.0, 8.3}}));
             p.drawPath(polyline({{8.0, 11.7}, {10.0, 13.7}, {12.0, 11.7}}));
         };
 
     case ToolIcon::Pin:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 图钉：帽 + 收腰的钉身 + 针
             p.drawLine(QPointF(6.5, 3.5), QPointF(13.5, 3.5));
-            p.drawPath(polyline({{8.2, 3.5}, {8.2, 8.0}, {5.5, 11.0}, {14.5, 11.0}, {11.8, 8.0}, {11.8, 3.5}}));
+            body(p, ink, [&] {
+                p.drawPath(polyline({{8.2, 3.5}, {8.2, 8.0}, {5.5, 11.0}, {14.5, 11.0}, {11.8, 8.0}, {11.8, 3.5}}));
+            });
             p.drawLine(QPointF(10.0, 11.0), QPointF(10.0, 17.0));
         };
 
     case ToolIcon::Save:
-        return [](QPainter& p, const QColor&) {
+        return [](QPainter& p, const Ink& ink) {
             // 软盘：切角外框 + 顶部标签 + 底部贴纸
-            p.drawPath(polyline({{4.5, 4.5}, {13.0, 4.5}, {15.5, 7.0}, {15.5, 15.5}, {4.5, 15.5}, {4.5, 4.5}}));
+            body(p, ink, [&] {
+                p.drawPath(polyline({{4.5, 4.5}, {13.0, 4.5}, {15.5, 7.0}, {15.5, 15.5}, {4.5, 15.5}, {4.5, 4.5}}));
+            });
             p.drawPath(polyline({{7.0, 4.5}, {7.0, 7.8}, {12.0, 7.8}, {12.0, 4.5}}));
             p.drawRoundedRect(QRectF(7.0, 11.0, 6.0, 4.5), 0.8, 0.8);
         };
 
     case ToolIcon::Copy:
-        return [](QPainter& p, const QColor&) {
-            // 两张叠放的纸，用应用图标的马卡龙配色：后面一张蓝色，前面“贴”起来的一张珊瑚红。
-            // 填充色太浅，各自加一圈深一点的同色描边，浅色工具栏上也看得清
+        return [](QPainter& p, const Ink&) {
+            // 两张叠放的纸：后面一张薰衣草紫，前面“贴”起来的一张薄荷绿（应用图标的配色）。
+            // 填充色太浅，各自加一圈深一点的同色描边，深浅主题下都看得清
             const qreal w = p.pen().widthF();
-            p.setPen(QPen(QColor(0x5B, 0x8D, 0xEF), w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p.setBrush(QColor(0xA0, 0xC4, 0xFF));
+            p.setPen(QPen(kLavender.deep, w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(kLavender.light);
             p.drawRoundedRect(QRectF(3.5, 3.5, 9.0, 9.0), 1.8, 1.8);
-            p.setPen(QPen(QColor(0xE0, 0x6C, 0x6C), w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p.setBrush(QColor(0xFF, 0xAD, 0xAD));
+            p.setPen(QPen(kMint.deep, w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(kMint.light);
             p.drawRoundedRect(QRectF(7.5, 7.5, 9.0, 9.0), 1.8, 1.8);
         };
     }
-    return [](QPainter&, const QColor&) {};
+    return [](QPainter&, const Ink&) {};
+}
+
+// 工具栏从左到右依次用彩虹马卡龙色；撤销 / 重做、样式按钮用中性灰
+Hue hueFor(ToolIcon id)
+{
+    switch (id) {
+    case ToolIcon::Rect:
+    case ToolIcon::Text:
+        return kRed;
+    case ToolIcon::Ellipse:
+    case ToolIcon::Number:
+        return kPeach;
+    case ToolIcon::Line:
+    case ToolIcon::LongCapture:
+        return kYellow;
+    case ToolIcon::Arrow:
+    case ToolIcon::Pin:
+        return kMint;
+    case ToolIcon::Pen:
+    case ToolIcon::Save:
+        return kCyan;
+    case ToolIcon::Marker:
+        return kBlue;
+    case ToolIcon::Mosaic:
+        return kLavender;
+    case ToolIcon::Eraser:
+        return kPink;
+    default:
+        return kGray;
+    }
 }
 
 } // namespace
 
-QIcon toolIcon(ToolIcon id, bool accent)
+bool toolbarDarkMode()
 {
-    // 复制按钮自带应用图标的配色，不跟随主题色
-    return makeIcon(drawerFor(id), accent, id == ToolIcon::Copy);
+    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
+QIcon toolIcon(ToolIcon id)
+{
+    // 复制按钮自带两种颜色，不按主题上色
+    return makeIcon(drawerFor(id), hueFor(id), id == ToolIcon::Copy);
 }
 
 QIcon widthIcon(qreal width)
 {
     // 实际粗细 1~30 映射到图标里 1~6 的线宽
     const qreal w = qBound(1.0, 1.0 + (width - 1) * 0.2, 6.0);
-    return makeIcon([w](QPainter& p, const QColor& c) {
-        p.setPen(QPen(c, w, Qt::SolidLine, Qt::RoundCap));
+    return makeIcon([w](QPainter& p, const Ink& ink) {
+        p.setPen(QPen(ink.line, w, Qt::SolidLine, Qt::RoundCap));
         p.drawLine(QPointF(4.0, 10.0), QPointF(16.0, 10.0));
     });
 }
@@ -264,10 +345,10 @@ QIcon widthIcon(qreal width)
 QIcon colorIcon(const QColor& color)
 {
     return makeIcon(
-        [color](QPainter& p, const QColor&) {
-            p.setPen(QPen(QColor(0, 0, 0, 60), 1.0));
+        [color](QPainter& p, const Ink&) {
+            p.setPen(QPen(toolbarDarkMode() ? QColor(255, 255, 255, 90) : QColor(0, 0, 0, 60), 1.0));
             p.setBrush(color);
             p.drawEllipse(QPointF(10.0, 10.0), 6.5, 6.5);
         },
-        false, true);
+        kGray, true);
 }

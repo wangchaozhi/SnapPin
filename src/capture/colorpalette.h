@@ -22,6 +22,7 @@ protected:
 
 private:
     void rebuild();
+    void applyTheme(); // 按系统深浅色主题设置样式
 
     QColor m_current;
 };

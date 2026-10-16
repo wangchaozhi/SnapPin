@@ -5,7 +5,9 @@
 #include "toolicons.h"
 
 #include <QColorDialog>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QStyleHints>
 #include <QToolButton>
 #include <QUndoStack>
 
@@ -20,8 +22,8 @@ QFrame* separator(QWidget* parent)
 {
     auto* line = new QFrame(parent);
     line->setFrameShape(QFrame::NoFrame);
+    line->setObjectName(QStringLiteral("ToolbarSeparator"));
     line->setFixedSize(1, kIconSize);
-    line->setStyleSheet(QStringLiteral("background:#dcdcdc;"));
     return line;
 }
 
@@ -32,12 +34,9 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
 {
     setObjectName(QStringLiteral("EditorToolbar"));
     setCursor(Qt::ArrowCursor);
-    setStyleSheet(QStringLiteral(
-        "#EditorToolbar{background:#fbfbfb;border:1px solid #c6c6c6;border-radius:6px;}"
-        "QToolButton{border:none;border-radius:5px;background:transparent;}"
-        "QToolButton:hover{background:#ececec;}"
-        "QToolButton:pressed{background:#e0e0e0;}"
-        "QToolButton:checked{background:#e3eeff;}"));
+    applyTheme();
+    // 跟随系统深浅色主题：换样式表，图标重绘时自己读取主题
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, &EditorToolbar::applyTheme);
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(5, 4, 5, 4);
@@ -155,6 +154,28 @@ QToolButton* EditorToolbar::addButton(const QIcon& icon, const QString& tip)
     b->setFocusPolicy(Qt::NoFocus); // 保持键盘焦点在遮罩上
     layout()->addWidget(b);
     return b;
+}
+
+void EditorToolbar::applyTheme()
+{
+    if (toolbarDarkMode()) {
+        setStyleSheet(QStringLiteral(
+            "#EditorToolbar{background:#2b2d31;border:1px solid #3d4047;border-radius:6px;}"
+            "#ToolbarSeparator{background:#4a4d55;}"
+            "QToolButton{border:none;border-radius:5px;background:transparent;}"
+            "QToolButton:hover{background:#3a3d44;}"
+            "QToolButton:pressed{background:#45484f;}"
+            "QToolButton:checked{background:#4a4d55;}"));
+    } else {
+        setStyleSheet(QStringLiteral(
+            "#EditorToolbar{background:#fbfbfb;border:1px solid #c6c6c6;border-radius:6px;}"
+            "#ToolbarSeparator{background:#dcdcdc;}"
+            "QToolButton{border:none;border-radius:5px;background:transparent;}"
+            "QToolButton:hover{background:#ececec;}"
+            "QToolButton:pressed{background:#e0e0e0;}"
+            "QToolButton:checked{background:#eceaf7;}"));
+    }
+    update();
 }
 
 void EditorToolbar::setCurrentTool(ToolType type)

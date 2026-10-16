@@ -31,6 +31,7 @@ protected:
 
 private:
     QToolButton* addButton(const QIcon& icon, const QString& tip);
+    void applyTheme(); // 按系统深浅色主题设置样式
     void updateStyleButtons();
 
     QHash<ToolType, QToolButton*> m_toolButtons;
