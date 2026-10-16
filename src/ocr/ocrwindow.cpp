@@ -5,7 +5,6 @@
 #include <QAction>
 #include <QCheckBox>
 #include <QClipboard>
-#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -21,6 +20,7 @@ OcrWindow::OcrWindow()
     , m_status(new QLabel(this))
     , m_findBar(new QWidget(this))
     , m_findEdit(new QLineEdit(m_findBar))
+    , m_replaceRow(nullptr)
     , m_replaceEdit(new QLineEdit(m_findBar))
     , m_caseCheck(new QCheckBox(tr("区分大小写"), m_findBar))
     , m_matchLabel(new QLabel(m_findBar))
@@ -82,17 +82,23 @@ OcrWindow::OcrWindow()
             updateMatches();
     });
 
-    auto* findLayout = new QGridLayout(m_findBar);
+    auto* findRow = new QHBoxLayout;
+    findRow->addWidget(m_findEdit, 1);
+    findRow->addWidget(m_matchLabel);
+    findRow->addWidget(m_caseCheck);
+    findRow->addWidget(prevButton);
+    findRow->addWidget(nextButton);
+    // 替换一行只在 Ctrl+H 时显示
+    m_replaceRow = new QWidget(m_findBar);
+    auto* replaceRow = new QHBoxLayout(m_replaceRow);
+    replaceRow->setContentsMargins(0, 0, 0, 0);
+    replaceRow->addWidget(m_replaceEdit, 1);
+    replaceRow->addWidget(replaceButton);
+    replaceRow->addWidget(replaceAllButton);
+    auto* findLayout = new QVBoxLayout(m_findBar);
     findLayout->setContentsMargins(0, 0, 0, 0);
-    findLayout->addWidget(m_findEdit, 0, 0);
-    findLayout->addWidget(m_matchLabel, 0, 1);
-    findLayout->addWidget(prevButton, 0, 2);
-    findLayout->addWidget(nextButton, 0, 3);
-    findLayout->addWidget(m_replaceEdit, 1, 0);
-    findLayout->addWidget(m_caseCheck, 1, 1);
-    findLayout->addWidget(replaceButton, 1, 2);
-    findLayout->addWidget(replaceAllButton, 1, 3);
-    findLayout->setColumnStretch(0, 1);
+    findLayout->addLayout(findRow);
+    findLayout->addWidget(m_replaceRow);
     m_findBar->hide();
 
     auto* findAction = new QAction(this);
@@ -154,6 +160,7 @@ void OcrWindow::showFindBar(bool replace)
     const QString selected = m_edit->textCursor().selectedText();
     if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
         m_findEdit->setText(selected);
+    m_replaceRow->setVisible(replace);
     m_findBar->show();
     QLineEdit* target = replace && !m_findEdit->text().isEmpty() ? m_replaceEdit : m_findEdit;
     target->setFocus();

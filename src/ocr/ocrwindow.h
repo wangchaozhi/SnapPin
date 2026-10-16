@@ -34,6 +34,7 @@ private:
     QLabel* m_status;
     QWidget* m_findBar;
     QLineEdit* m_findEdit;
+    QWidget* m_replaceRow;
     QLineEdit* m_replaceEdit;
     QCheckBox* m_caseCheck;
     QLabel* m_matchLabel;
