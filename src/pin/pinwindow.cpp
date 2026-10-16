@@ -36,6 +36,30 @@ PinWindow::PinWindow(const QImage& image)
 
 void PinWindow::setImage(const QImage& image)
 {
+    m_original = m_translated = QImage(); // 内容换了，之前的译文不再对应
+    applyImage(image);
+}
+
+void PinWindow::showTranslation(const QImage& translated)
+{
+    if (!hasTranslation()) // 重新翻译时原图还是第一次翻译前的那张
+        m_original = m_view;
+    m_translated = translated;
+    m_showingTranslation = true;
+    applyImage(translated);
+}
+
+void PinWindow::toggleTranslation()
+{
+    if (!hasTranslation())
+        return;
+    m_showingTranslation = !m_showingTranslation;
+    applyImage(m_showingTranslation ? m_translated : m_original);
+    showHint(m_showingTranslation ? tr("译文") : tr("原文"));
+}
+
+void PinWindow::applyImage(const QImage& image)
+{
     m_source = image;
     m_rotation = 0;
     m_flipH = m_flipV = false;
@@ -140,16 +164,18 @@ void PinWindow::paintEvent(QPaintEvent*)
         p.setPen(hasFocus() ? QColor(0, 120, 255, 200) : QColor(0, 0, 0, 50));
     p.drawRect(img.adjusted(0, 0, -1, -1));
 
-    if (m_hintTimer.isActive()) { // 缩放比例 / 不透明度提示
+    // 缩放比例 / 不透明度的临时提示优先，其次是“正在翻译”这类常驻状态
+    const QString hint = m_hintTimer.isActive() ? m_hint : m_status;
+    if (!hint.isEmpty()) {
         p.setRenderHint(QPainter::Antialiasing);
         const QFontMetrics fm(font());
-        QRectF box(0, 0, fm.horizontalAdvance(m_hint) + 16, fm.height() + 8);
+        QRectF box(0, 0, fm.horizontalAdvance(hint) + 16, fm.height() + 8);
         box.moveCenter(QRectF(img).center());
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(0, 0, 0, 160));
         p.drawRoundedRect(box, 4, 4);
         p.setPen(Qt::white);
-        p.drawText(box, Qt::AlignCenter, m_hint);
+        p.drawText(box, Qt::AlignCenter, hint);
     }
 }
 
@@ -203,6 +229,12 @@ void PinWindow::wheelEvent(QWheelEvent* e)
     m_thumbnail = false;
     setScale(m_scale * (delta > 0 ? 1.1 : 1 / 1.1), e->globalPosition().toPoint());
     showHint(QStringLiteral("%1%").arg(qRound(m_scale * 100)));
+}
+
+void PinWindow::setStatus(const QString& text)
+{
+    m_status = text;
+    update();
 }
 
 void PinWindow::showHint(const QString& text)
@@ -302,6 +334,8 @@ void PinWindow::keyPressEvent(QKeyEvent* e)
         emit editRequested();
     else if (e->key() == Qt::Key_R && !ctrl)
         emit ocrRequested();
+    else if (e->key() == Qt::Key_T && !ctrl)
+        hasTranslation() ? toggleTranslation() : emit translateRequested();
     else
         QWidget::keyPressEvent(e);
 }
@@ -311,6 +345,13 @@ void PinWindow::contextMenuEvent(QContextMenuEvent* e)
     QMenu menu(this);
     menu.addAction(tr("编辑标注\t空格"), this, &PinWindow::editRequested);
     menu.addAction(tr("识别文字\tR"), this, &PinWindow::ocrRequested);
+    if (hasTranslation()) {
+        menu.addAction((m_showingTranslation ? tr("显示原文") : tr("显示译文")) + QStringLiteral("\tT"), this,
+                       &PinWindow::toggleTranslation);
+        menu.addAction(tr("重新翻译"), this, &PinWindow::translateRequested);
+    } else {
+        menu.addAction(tr("翻译\tT"), this, &PinWindow::translateRequested);
+    }
     menu.addSeparator();
     menu.addAction(tr("复制\tCtrl+C"), this, &PinWindow::copyToClipboard);
     menu.addAction(tr("另存为...\tCtrl+S"), this, &PinWindow::save);

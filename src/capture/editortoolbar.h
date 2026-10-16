@@ -28,6 +28,7 @@ signals:
     void saveRequested();
     void copyRequested();
     void ocrRequested();
+    void translateRequested();
 
 protected:
     void hideEvent(QHideEvent* e) override;

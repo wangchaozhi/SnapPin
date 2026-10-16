@@ -263,6 +263,19 @@ Drawer drawerFor(ToolIcon id)
             p.drawLine(QPointF(7.0, 12.5), QPointF(10.5, 12.5));
         };
 
+    case ToolIcon::Translate:
+        return [](QPainter& p, const Ink& ink) {
+            // 两张错开的卡片：后面一张写“文”，前面一张写“A”
+            p.drawRoundedRect(QRectF(2.5, 2.5, 9.5, 9.5), 1.5, 1.5);
+            p.drawLine(QPointF(4.8, 5.4), QPointF(9.7, 5.4));
+            p.drawLine(QPointF(7.25, 3.9), QPointF(7.25, 5.4));
+            p.drawPath(polyline({{5.2, 6.4}, {6.6, 8.6}}));
+            p.drawPath(polyline({{9.3, 6.4}, {7.9, 8.6}}));
+            body(p, ink, [&] { p.drawRoundedRect(QRectF(8.0, 8.0, 9.5, 9.5), 1.5, 1.5); });
+            p.drawPath(polyline({{10.6, 15.3}, {12.75, 10.3}, {14.9, 15.3}}));
+            p.drawLine(QPointF(11.5, 13.6), QPointF(14.0, 13.6));
+        };
+
     case ToolIcon::Pin:
         return [](QPainter& p, const Ink& ink) {
             // 图钉：帽 + 收腰的钉身 + 针
@@ -322,6 +335,8 @@ Hue hueFor(ToolIcon id)
     case ToolIcon::Marker:
     case ToolIcon::Ocr:
         return kBlue;
+    case ToolIcon::Translate:
+        return kPeach;
     case ToolIcon::Mosaic:
         return kLavender;
     case ToolIcon::Eraser:

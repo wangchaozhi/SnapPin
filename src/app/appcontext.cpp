@@ -10,6 +10,8 @@
 #include "ocr/textrecognizer.h"
 #include "pin/pinmanager.h"
 #include "pin/pinwindow.h"
+#include "translate/overlayrender.h"
+#include "translate/translator.h"
 #include "settingsdialog.h"
 #include "update/updater.h"
 
@@ -40,11 +42,14 @@ AppContext::AppContext(QObject* parent)
     , m_pins(new PinManager(this))
     , m_history(new HistoryStore(this))
     , m_ocr(new TextRecognizer(this))
+    , m_translator(new Translator(this))
     , m_updater(new Updater(this))
     , m_updateTimer(new QTimer(this))
 {
     connect(m_pins, &PinManager::editRequested, this, &AppContext::editPin);
     connect(m_pins, &PinManager::ocrRequested, this, &AppContext::recognizeText);
+    connect(m_pins, &PinManager::translateRequested, this,
+            [this](PinWindow* pin) { translatePin(pin, false); });
     // 贴图穿透后收不到鼠标，提示怎么恢复
     connect(m_pins, &PinManager::clickThroughEnabled, this, [this] {
         const QString keys = m_settings.hotkeys.value(QStringLiteral("toggle_click_through"));
@@ -80,7 +85,8 @@ void AppContext::start()
 void AppContext::setupActions()
 {
     m_actions.add(QStringLiteral("capture"), tr("截图"), [this] { startCapture(); });
-    m_actions.add(QStringLiteral("ocr_capture"), tr("截图识字"), [this] { startCapture(true); });
+    m_actions.add(QStringLiteral("ocr_capture"), tr("截图识字"), [this] { startCapture(FinishAction::Ocr); });
+    m_actions.add(QStringLiteral("translate_capture"), tr("截图翻译"), [this] { startCapture(FinishAction::Translate); });
     m_actions.add(QStringLiteral("pin_clipboard"), tr("贴图（剪贴板）"), [this] {
         if (!m_pins->pinClipboard() && m_tray)
             m_tray->showMessage(tr("SnapPin"), tr("剪贴板中没有图片或文字"), QSystemTrayIcon::Information, 2000);
@@ -142,7 +148,7 @@ void AppContext::setupTray()
 
 void AppContext::rebuildTrayMenu()
 {
-    static const char* const kMenu[] = {"capture", "ocr_capture", "pin_clipboard", nullptr,
+    static const char* const kMenu[] = {"capture", "ocr_capture", "translate_capture", "pin_clipboard", nullptr,
                                         "history", "toggle_pins", "close_pins", "restore_pin", "toggle_click_through", nullptr,
                                         "settings", "check_update", "quit"};
     m_trayMenu->clear();
@@ -173,6 +179,7 @@ void AppContext::applySettings()
     m_platform.capturer->setBackend(m_settings.captureBackend);
     m_history->setEnabled(m_settings.historyEnabled);
     m_history->setMaxCount(m_settings.historyMax);
+    m_translator->configure(m_settings);
     registerHotkeys();
     rebuildTrayMenu();
     PinWindow::setClickThroughShortcut(m_settings.hotkeys.value(QStringLiteral("toggle_click_through")));
@@ -222,6 +229,7 @@ void AppContext::openSettings()
     if (dlg.exec() == QDialog::Accepted) {
         m_settings = dlg.settings();
         m_settings.save();
+        dlg.saveSecrets();
         if (autostartSupported() && dlg.autostart() != autostartEnabled() && !setAutostartEnabled(dlg.autostart()))
             m_tray->showMessage(tr("设置"), tr("无法修改开机自启设置"), QSystemTrayIcon::Warning, 3000);
     }
@@ -240,14 +248,14 @@ void AppContext::openHistory()
     m_historyWindow->activateWindow();
 }
 
-CaptureSession* AppContext::newSession(PinWindow* editTarget, bool ocr)
+CaptureSession* AppContext::newSession(PinWindow* editTarget, FinishAction copyAction)
 {
     m_session = new CaptureSession(m_platform.capturer.get(), m_platform.windowFinder.get(), this);
     QPointer<PinWindow> target(editTarget);
     connect(m_session, &CaptureSession::finished, this,
-            [this, target, ocr](const QImage& image, const QRect& rect, FinishAction action) {
-                if (ocr && action == FinishAction::Copy)
-                    action = FinishAction::Ocr;
+            [this, target, copyAction](const QImage& image, const QRect& rect, FinishAction action) {
+                if (action == FinishAction::Copy)
+                    action = copyAction;
                 // 延后到遮罩销毁后再处理，避免保存对话框在遮罩事件处理中弹出
                 QTimer::singleShot(0, this, [this, image, rect, action, target] {
                     handleCaptureResult(image, rect, action, target);
@@ -261,11 +269,11 @@ CaptureSession* AppContext::newSession(PinWindow* editTarget, bool ocr)
     return m_session;
 }
 
-void AppContext::startCapture(bool ocr)
+void AppContext::startCapture(FinishAction copyAction)
 {
     if (m_session || m_scrollSession || m_settingsOpen) // 已在截图中，或正在设置快捷键
         return;
-    CaptureSession* session = newSession(nullptr, ocr);
+    CaptureSession* session = newSession(nullptr, copyAction);
     session->setIncludeCursor(m_settings.captureCursor);
     session->start();
 }
@@ -302,6 +310,9 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
     case FinishAction::Ocr:
         recognizeText(image);
         break;
+    case FinishAction::Translate:
+        translatePin(m_pins->pin(image, globalRect.topLeft()), true);
+        break;
     case FinishAction::Save:
         saveImageInteractive(image);
         break;
@@ -330,11 +341,44 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
 
 void AppContext::recognizeText(const QImage& image)
 {
-    auto* window = new OcrWindow;
+    auto* window = new OcrWindow(m_translator);
     window->show();
     window->raise();
     window->activateWindow();
     m_ocr->recognize(image, window, [window](const OcrResult& r) { window->setResult(r); });
+}
+
+void AppContext::translatePin(PinWindow* pin, bool closeOnFail)
+{
+    // 原文在 m_original 里时（重新翻译）用原文，不翻译译文
+    const QImage image = pin->hasTranslation() ? pin->originalImage() : pin->image();
+    pin->setStatus(tr("正在识别文字…"));
+    auto fail = [this, closeOnFail](PinWindow* pin, const QString& message) {
+        pin->setStatus(QString());
+        if (closeOnFail)
+            pin->close();
+        m_tray->showMessage(tr("翻译"), message, QSystemTrayIcon::Warning, 4000);
+    };
+    m_ocr->recognize(image, pin, [this, pin, image, fail](const OcrResult& r) {
+        if (!r.error.isEmpty())
+            return fail(pin, r.error);
+        const QList<TextBlock> blocks = groupTextBlocks(r.fragments);
+        if (blocks.isEmpty())
+            return fail(pin, tr("没有识别到文字"));
+        QStringList texts;
+        for (const TextBlock& b : blocks)
+            texts << b.text;
+        pin->setStatus(m_translator->remoteHost().isEmpty()
+                           ? tr("正在翻译…")
+                           : tr("正在翻译（文字发送到 %1）…").arg(m_translator->remoteHost()));
+        m_translator->translate(texts, Translator::targetLanguage(), pin, pin,
+                                [pin, image, blocks, fail](const TranslateResult& t) {
+                                    if (!t.error.isEmpty())
+                                        return fail(pin, tr("翻译失败：%1").arg(t.error));
+                                    pin->setStatus(QString());
+                                    pin->showTranslation(renderTranslatedImage(image, blocks, t.texts));
+                                });
+    });
 }
 
 void AppContext::startLongCapture(const QRect& globalRect)

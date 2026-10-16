@@ -7,6 +7,7 @@ const QList<AppSettings::HotkeyDefault>& AppSettings::hotkeyDefaults()
     static const QList<HotkeyDefault> defaults = {
         {QStringLiteral("capture"), QStringLiteral("F1")},
         {QStringLiteral("ocr_capture"), QString()},
+        {QStringLiteral("translate_capture"), QString()},
         {QStringLiteral("pin_clipboard"), QStringLiteral("F3")},
         {QStringLiteral("toggle_pins"), QStringLiteral("Shift+F3")},
         {QStringLiteral("toggle_click_through"), QStringLiteral("Ctrl+F3")},
@@ -33,6 +34,9 @@ AppSettings AppSettings::load()
     a.saveFormat = s.value(QStringLiteral("save/format"), a.saveFormat).toString();
     a.jpgQuality = s.value(QStringLiteral("save/quality"), a.jpgQuality).toInt();
     a.quickSaveDir = s.value(QStringLiteral("save/quickDir")).toString();
+    a.translateEngine = s.value(QStringLiteral("translate/engine"), a.translateEngine).toString();
+    a.openAiBaseUrl = s.value(QStringLiteral("translate/openAiBaseUrl"), a.openAiBaseUrl).toString();
+    a.openAiModel = s.value(QStringLiteral("translate/openAiModel"), a.openAiModel).toString();
     return a;
 }
 
@@ -50,6 +54,9 @@ void AppSettings::save() const
     s.setValue(QStringLiteral("save/pattern"), fileNamePattern);
     s.setValue(QStringLiteral("save/format"), saveFormat);
     s.setValue(QStringLiteral("save/quality"), jpgQuality);
+    s.setValue(QStringLiteral("translate/engine"), translateEngine);
+    s.setValue(QStringLiteral("translate/openAiBaseUrl"), openAiBaseUrl);
+    s.setValue(QStringLiteral("translate/openAiModel"), openAiModel);
     if (quickSaveDir.isEmpty())
         s.remove(QStringLiteral("save/quickDir"));
     else

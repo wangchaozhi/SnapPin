@@ -1,9 +1,12 @@
 #include "ocrwindow.h"
 
 #include "platform/platform.h"
+#include "translate/translatetext.h"
+#include "translate/translator.h"
 
 #include <QAction>
 #include <QClipboard>
+#include <QComboBox>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
@@ -15,6 +18,8 @@
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScreen>
+#include <QSplitter>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -42,7 +47,7 @@ protected:
 };
 } // namespace
 
-OcrWindow::OcrWindow()
+OcrWindow::OcrWindow(Translator* translator)
     : QWidget(nullptr, Qt::Window | Qt::WindowStaysOnTopHint)
     , m_status(new QLabel(this))
     , m_edit(new FindTextEdit(this))
@@ -52,6 +57,8 @@ OcrWindow::OcrWindow()
     , m_caseButton(new QToolButton(m_findBar))
     , m_matchLabel(new QLabel(m_findEdit))
     , m_copyButton(new QPushButton(tr("复制全部"), this))
+    , m_translator(translator)
+    , m_splitter(new QSplitter(this))
 {
     setWindowTitle(tr("识别文字 - SnapPin"));
     setAttribute(Qt::WA_DeleteOnClose);
@@ -96,7 +103,36 @@ OcrWindow::OcrWindow()
     auto* closeButton = new QPushButton(tr("关闭"), this);
     connect(closeButton, &QPushButton::clicked, this, &QWidget::close);
 
-    auto* buttons = new QHBoxLayout;
+    auto* buttons = m_buttons = new QHBoxLayout;
+    if (m_translator) {
+        // 目标语言 + 翻译按钮；选过的目标语言下次还用
+        m_targetCombo = new QComboBox(this);
+        for (const TranslateLanguage& l : translateLanguages())
+            m_targetCombo->addItem(l.name, l.code);
+        m_targetCombo->setToolTip(tr("翻译成"));
+        const int current = m_targetCombo->findData(Translator::targetLanguage());
+        m_targetCombo->setCurrentIndex(qMax(0, current));
+        connect(m_targetCombo, &QComboBox::activated, this, [this] {
+            Translator::setTargetLanguage(m_targetCombo->currentData().toString());
+            if (m_translation && m_translation->isVisible())
+                translate();
+        });
+        m_translateButton = new QPushButton(tr("翻译"), this);
+        m_translateButton->setEnabled(false);
+        connect(m_translateButton, &QPushButton::clicked, this, &OcrWindow::translate);
+        auto* translateAction = new QAction(this);
+        translateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
+        connect(translateAction, &QAction::triggered, this, [this] {
+            if (m_translateButton->isEnabled())
+                translate();
+        });
+        addAction(translateAction);
+        m_translateButton->setToolTip(tr("用 %1 翻译（%2）")
+                                          .arg(m_translator->engineName(),
+                                               translateAction->shortcut().toString(QKeySequence::NativeText)));
+        buttons->addWidget(m_targetCombo);
+        buttons->addWidget(m_translateButton);
+    }
     buttons->addStretch();
     buttons->addWidget(m_copyButton);
     buttons->addWidget(closeButton);
@@ -197,7 +233,10 @@ OcrWindow::OcrWindow()
         layout->addWidget(m_titleBar);
     }
     layout->addWidget(m_status);
-    layout->addWidget(m_edit, 1);
+    m_splitter->setChildrenCollapsible(false);
+    m_splitter->addWidget(m_edit);
+    m_splitter->installEventFilter(this); // 文本框随分隔栏移动时，查找面板跟着走
+    layout->addWidget(m_splitter, 1);
     layout->addLayout(buttons);
     setStatus(tr("正在识别文字…"), false);
     applyColors();
@@ -215,10 +254,14 @@ void OcrWindow::applyColors()
     const QColor text = pal.color(QPalette::Text);
     const QColor highlight = pal.color(QPalette::Highlight);
     if (m_glass) {
-        QPalette editPal = m_edit->palette();
-        editPal.setColor(QPalette::Base, QColor(rgba(base, 90)));
-        m_edit->setPalette(editPal);
-        m_edit->setFrameShape(QFrame::NoFrame);
+        for (QPlainTextEdit* edit : {m_edit, m_translation}) {
+            if (!edit)
+                continue;
+            QPalette editPal = edit->palette();
+            editPal.setColor(QPalette::Base, QColor(rgba(base, 90)));
+            edit->setPalette(editPal);
+            edit->setFrameShape(QFrame::NoFrame);
+        }
     }
     // 查找面板与窗口同一套风格：毛玻璃下是半透明的圆角面板、输入框和扁平按钮
     const bool glass = m_glass;
@@ -252,11 +295,81 @@ void OcrWindow::setResult(const OcrResult& result)
     m_edit->setReadOnly(false);
     m_edit->setPlainText(result.text);
     m_copyButton->setEnabled(!result.text.isEmpty());
+    if (m_translateButton)
+        m_translateButton->setEnabled(!result.text.isEmpty());
     if (result.text.isEmpty())
         setStatus(tr("没有识别到文字"), true);
     else
         setStatus(tr("可以直接修改，选中部分按 Ctrl+C 复制，或点“复制全部”；") + m_findHint, false);
     m_edit->setFocus();
+}
+
+void OcrWindow::translate()
+{
+    const QString text = m_edit->toPlainText().trimmed();
+    if (!m_translator || text.isEmpty())
+        return;
+    if (!m_translation) {
+        m_translation = new QPlainTextEdit(m_splitter);
+        m_splitter->addWidget(m_translation);
+        applyColors();
+        m_copyTranslationButton = new QPushButton(tr("复制译文"), this);
+        connect(m_copyTranslationButton, &QPushButton::clicked, this, [this] {
+            QGuiApplication::clipboard()->setText(m_translation->toPlainText());
+            m_copyTranslationButton->setText(tr("已复制"));
+            QTimer::singleShot(1500, m_copyTranslationButton,
+                               [b = m_copyTranslationButton] { b->setText(tr("复制译文")); });
+        });
+        m_buttons->insertWidget(m_buttons->indexOf(m_copyButton) + 1, m_copyTranslationButton);
+        // 左右对照需要宽一些的窗口，屏幕放得下就加宽
+        const QRect avail = screen() ? screen()->availableGeometry() : QRect();
+        const int wanted = qMin(900, avail.isValid() ? avail.width() - 40 : 900);
+        if (width() < wanted) {
+            QRect g = geometry();
+            g.setWidth(wanted);
+            if (avail.isValid() && g.right() > avail.right())
+                g.moveRight(avail.right());
+            setGeometry(g);
+        }
+        m_splitter->setSizes({1, 1});
+    }
+    m_translation->show();
+    m_translation->setReadOnly(true);
+    m_translation->clear();
+    m_translation->setPlaceholderText(tr("正在翻译…"));
+    m_copyTranslationButton->setEnabled(false);
+    m_translateButton->setEnabled(false);
+    const QString host = m_translator->remoteHost();
+    setStatus(host.isEmpty() ? tr("正在用 %1 翻译（本机离线）…").arg(m_translator->engineName())
+                             : tr("正在用 %1 翻译，文字会发送到 %2…").arg(m_translator->engineName(), host),
+              false);
+    const int request = ++m_translateRequest;
+    // 整段一起翻译，保留换行，左右两边的行大致对应
+    m_translator->translate({text}, m_targetCombo->currentData().toString(), this, this,
+                            [this, request](const TranslateResult& r) {
+                                if (request != m_translateRequest)
+                                    return;
+                                m_translateButton->setEnabled(true);
+                                m_translation->setPlaceholderText(QString());
+                                if (!r.error.isEmpty()) {
+                                    setStatus(tr("翻译失败：%1").arg(r.error), true);
+                                    return;
+                                }
+                                m_translation->setReadOnly(false);
+                                m_translation->setPlainText(r.texts.value(0));
+                                m_copyTranslationButton->setEnabled(true);
+                                setStatus(r.host.isEmpty()
+                                              ? tr("译文由 %1 提供，在本机完成，文字没有发出本机").arg(r.engine)
+                                              : tr("译文由 %1 提供，原文已发送到 %2").arg(r.engine, r.host),
+                                          false);
+                            });
+}
+
+void OcrWindow::resizeEvent(QResizeEvent* e)
+{
+    // 宽窗口左右对照，窄窗口上下排列
+    m_splitter->setOrientation(width() >= 640 ? Qt::Horizontal : Qt::Vertical);
+    QWidget::resizeEvent(e);
 }
 
 void OcrWindow::copyAll()
@@ -399,7 +512,7 @@ void OcrWindow::placeFindBar()
         return;
     }
     // 与文本框同宽、左右对齐，输入框随宽度伸展
-    const QRect r = m_edit->geometry();
+    const QRect r(m_edit->mapTo(this, QPoint(0, 0)), m_edit->size());
     m_findBar->setFixedWidth(r.width());
     m_findBar->adjustSize();
     m_findBar->move(r.topLeft());
@@ -408,7 +521,7 @@ void OcrWindow::placeFindBar()
 
 bool OcrWindow::eventFilter(QObject* watched, QEvent* e)
 {
-    if (watched == m_edit && (e->type() == QEvent::Resize || e->type() == QEvent::Move))
+    if ((watched == m_edit || watched == m_splitter) && (e->type() == QEvent::Resize || e->type() == QEvent::Move))
         placeFindBar();
     return QWidget::eventFilter(watched, e);
 }

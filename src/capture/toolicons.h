@@ -20,6 +20,7 @@ enum class ToolIcon {
     Redo,
     LongCapture,
     Ocr,
+    Translate,
     Pin,
     Save,
     Copy,

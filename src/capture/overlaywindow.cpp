@@ -143,6 +143,7 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     connect(m_toolbar, &EditorToolbar::longCaptureRequested, this, [this] { finish(FinishAction::LongCapture); });
     connect(m_toolbar, &EditorToolbar::copyRequested, this, [this] { finish(FinishAction::Copy); });
     connect(m_toolbar, &EditorToolbar::ocrRequested, this, [this] { finish(FinishAction::Ocr); });
+    connect(m_toolbar, &EditorToolbar::translateRequested, this, [this] { finish(FinishAction::Translate); });
     connect(&m_doc, &AnnotationDoc::changed, this, qOverload<>(&QWidget::update));
 
     setState(std::make_unique<IdleState>(this));
@@ -872,6 +873,10 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
         }
         if (ctrl && e->key() == Qt::Key_R) {
             finish(FinishAction::Ocr);
+            return;
+        }
+        if (ctrl && e->key() == Qt::Key_E) {
+            finish(FinishAction::Translate);
             return;
         }
         if (ctrl && e->key() == Qt::Key_L && scrollCaptureSupported()) {

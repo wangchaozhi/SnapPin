@@ -26,6 +26,15 @@ struct AppSettings {
     int jpgQuality = 90;
     QString quickSaveDir; // 空表示默认的“图片/SnapPin”
 
+    // 翻译：system 是 macOS 系统翻译（本机离线），openai 是 OpenAI 兼容的在线接口。API Key 存在系统钥匙串里，不在这里
+#ifdef Q_OS_MACOS
+    QString translateEngine = QStringLiteral("system");
+#else
+    QString translateEngine = QStringLiteral("openai");
+#endif
+    QString openAiBaseUrl = QStringLiteral("https://api.deepseek.com");
+    QString openAiModel = QStringLiteral("deepseek-chat");
+
     static AppSettings load();
     void save() const;
 };

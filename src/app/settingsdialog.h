@@ -20,10 +20,12 @@ public:
 
     AppSettings settings() const;
     bool autostart() const;
+    void saveSecrets() const; // 点“确定”后把 API Key 写进系统钥匙串
 
 private:
     QWidget* createGeneralPage(const QString& historyDir);
     QWidget* createHotkeyPage(const ActionRegistry& actions);
+    QWidget* createTranslatePage();
 
     AppSettings m_settings;
     QCheckBox* m_autostart = nullptr;
@@ -38,4 +40,9 @@ private:
     QSpinBox* m_quality = nullptr;
     QLineEdit* m_quickDir = nullptr;
     QMap<QString, QKeySequenceEdit*> m_hotkeyEdits;
+    QComboBox* m_translateEngine = nullptr;
+    QLineEdit* m_openAiUrl = nullptr;
+    QLineEdit* m_openAiModel = nullptr;
+    QLineEdit* m_openAiKey = nullptr;
+    QString m_savedKey;
 };

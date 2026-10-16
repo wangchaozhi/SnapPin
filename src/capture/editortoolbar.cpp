@@ -118,6 +118,8 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     }
     connect(addButton(toolIcon(ToolIcon::Ocr), tr("识别文字 (Ctrl+R)")), &QToolButton::clicked, this,
             &EditorToolbar::ocrRequested);
+    connect(addButton(toolIcon(ToolIcon::Translate), tr("翻译：识别文字并把译文贴在原处 (Ctrl+E)")), &QToolButton::clicked,
+            this, &EditorToolbar::translateRequested);
     connect(addButton(toolIcon(ToolIcon::Pin), tr("贴图 (Ctrl+T)")), &QToolButton::clicked, this, &EditorToolbar::pinRequested);
     connect(addButton(toolIcon(ToolIcon::Save), tr("保存 (Ctrl+S)")), &QToolButton::clicked, this, &EditorToolbar::saveRequested);
     // 主操作用应用图标的配色突出；取消用 Esc，不单独放按钮

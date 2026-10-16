@@ -4,6 +4,11 @@
 #include "appicon.h"
 #include "imageutil.h"
 #include "platform/platform.h"
+#include "translate/openaiengine.h"
+#include "translate/secretstore.h"
+#ifdef Q_OS_MACOS
+#include "translate/systemengine.h"
+#endif
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -19,6 +24,8 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
+#include <QAction>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QUrl>
@@ -35,6 +42,7 @@ SettingsDialog::SettingsDialog(const AppSettings& settings, const ActionRegistry
     auto* tabs = new QTabWidget(this);
     tabs->addTab(createGeneralPage(historyDir), tr("常规"));
     tabs->addTab(createHotkeyPage(actions), tr("快捷键"));
+    tabs->addTab(createTranslatePage(), tr("翻译"));
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -177,6 +185,110 @@ QWidget* SettingsDialog::createHotkeyPage(const ActionRegistry& actions)
     return page;
 }
 
+QWidget* SettingsDialog::createTranslatePage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+
+    auto* engineForm = new QFormLayout;
+    m_translateEngine = new QComboBox(page);
+#ifdef Q_OS_MACOS
+    if (SystemEngine::isSupported())
+        m_translateEngine->addItem(tr("macOS 系统翻译（本机离线）"), QStringLiteral("system"));
+    else
+        m_translateEngine->addItem(tr("macOS 系统翻译（需要 macOS 26）"), QStringLiteral("system"));
+#endif
+    m_translateEngine->addItem(tr("大模型 API（OpenAI 兼容接口）"), QStringLiteral("openai"));
+    engineForm->addRow(tr("翻译引擎："), m_translateEngine);
+    layout->addLayout(engineForm);
+
+    auto* online = new QGroupBox(tr("大模型 API"), page);
+    auto* form = new QFormLayout(online);
+    // 常见服务的地址和模型名，选了直接填进去；也可以自己填任何 OpenAI 兼容的接口
+    struct Preset {
+        QString name, url, model;
+    };
+    const QList<Preset> presets = {
+        {tr("DeepSeek"), QStringLiteral("https://api.deepseek.com"), QStringLiteral("deepseek-chat")},
+        {tr("通义千问"), QStringLiteral("https://dashscope.aliyuncs.com/compatible-mode/v1"), QStringLiteral("qwen-plus")},
+        {tr("本机 Ollama（离线）"), QStringLiteral("http://localhost:11434/v1"), QStringLiteral("qwen2.5:7b")},
+    };
+    auto* preset = new QComboBox(online);
+    preset->addItem(tr("自定义"));
+    for (const Preset& p : presets)
+        preset->addItem(p.name, QStringList{p.url, p.model});
+    m_openAiUrl = new QLineEdit(m_settings.openAiBaseUrl, online);
+    m_openAiUrl->setPlaceholderText(OpenAiEngine::defaultBaseUrl());
+    m_openAiModel = new QLineEdit(m_settings.openAiModel, online);
+    m_openAiModel->setPlaceholderText(OpenAiEngine::defaultModel());
+    m_savedKey = readSecret(OpenAiEngine::apiKeySecret());
+    m_openAiKey = new QLineEdit(m_savedKey, online);
+    m_openAiKey->setEchoMode(QLineEdit::Password);
+    m_openAiKey->setPlaceholderText(tr("本机服务（如 Ollama）可以不填"));
+    QAction* reveal = m_openAiKey->addAction(QIcon(), QLineEdit::TrailingPosition);
+    reveal->setText(tr("显示"));
+    reveal->setToolTip(tr("显示 / 隐藏"));
+    connect(reveal, &QAction::triggered, m_openAiKey, [this] {
+        m_openAiKey->setEchoMode(m_openAiKey->echoMode() == QLineEdit::Password ? QLineEdit::Normal : QLineEdit::Password);
+    });
+    for (int i = 1; i < preset->count(); ++i) {
+        const QStringList d = preset->itemData(i).toStringList();
+        if (d.value(0) == m_settings.openAiBaseUrl && d.value(1) == m_settings.openAiModel)
+            preset->setCurrentIndex(i);
+    }
+    connect(preset, &QComboBox::activated, this, [this, preset](int i) {
+        const QStringList d = preset->itemData(i).toStringList();
+        if (d.size() == 2) {
+            m_openAiUrl->setText(d[0]);
+            m_openAiModel->setText(d[1]);
+        }
+    });
+    form->addRow(tr("服务："), preset);
+    form->addRow(tr("接口地址："), m_openAiUrl);
+    form->addRow(tr("模型："), m_openAiModel);
+    form->addRow(tr("API Key："), m_openAiKey);
+    auto* keyHint = new QLabel(tr("API Key 保存在%1，不会写进设置文件。").arg(secretStoreName()), online);
+    keyHint->setWordWrap(true);
+    keyHint->setStyleSheet(QStringLiteral("color:gray;"));
+    form->addRow(keyHint);
+    layout->addWidget(online);
+
+    auto* privacy = new QGroupBox(tr("隐私"), page);
+    auto* privacyLayout = new QVBoxLayout(privacy);
+    auto* privacyText = new QLabel(
+        tr("截图和贴图的文字识别始终在本机完成。使用在线翻译服务时，识别出的文字（不含图片）会发送到上面填写的接口地址；"
+           "第一次发送到某个服务器之前会先询问你。macOS 系统翻译和本机 Ollama 不会把文字发出本机。"),
+        privacy);
+    privacyText->setWordWrap(true);
+    privacyLayout->addWidget(privacyText);
+    auto* revoke = new QPushButton(tr("重新询问是否发送"), privacy);
+    revoke->setToolTip(tr("忘掉已经同意过的在线服务，下次翻译时重新询问"));
+    connect(revoke, &QPushButton::clicked, this, [revoke] {
+        QSettings().remove(QStringLiteral("translate/consentedHosts"));
+        revoke->setEnabled(false);
+    });
+    privacyLayout->addWidget(revoke, 0, Qt::AlignLeft);
+    layout->addWidget(privacy);
+
+    auto updateEnabled = [this, online] {
+        online->setEnabled(m_translateEngine->currentData().toString() == QLatin1String("openai"));
+    };
+    connect(m_translateEngine, &QComboBox::currentIndexChanged, this, updateEnabled);
+    const int engineIndex = m_translateEngine->findData(m_settings.translateEngine);
+    m_translateEngine->setCurrentIndex(engineIndex >= 0 ? engineIndex : m_translateEngine->count() - 1);
+    updateEnabled();
+
+    layout->addStretch();
+    return page;
+}
+
+void SettingsDialog::saveSecrets() const
+{
+    const QString key = m_openAiKey->text().trimmed();
+    if (key != m_savedKey)
+        writeSecret(OpenAiEngine::apiKeySecret(), key);
+}
+
 AppSettings SettingsDialog::settings() const
 {
     AppSettings s = m_settings;
@@ -192,6 +304,9 @@ AppSettings SettingsDialog::settings() const
     s.saveFormat = m_format->currentData().toString();
     s.jpgQuality = m_quality->value();
     s.quickSaveDir = m_quickDir->text().trimmed();
+    s.translateEngine = m_translateEngine->currentData().toString();
+    s.openAiBaseUrl = m_openAiUrl->text().trimmed();
+    s.openAiModel = m_openAiModel->text().trimmed();
     return s;
 }
 

@@ -59,6 +59,11 @@ set(CORE_SOURCES
     src/ocr/ocrwindow.h src/ocr/ocrwindow.cpp
     src/ocr/textrecognizer.h src/ocr/textrecognizer.cpp
     src/pin/pinmanager.h src/pin/pinmanager.cpp
+    src/translate/translationengine.h
+    src/translate/openaiengine.h src/translate/openaiengine.cpp
+    src/translate/translator.h src/translate/translator.cpp
+    src/translate/overlayrender.h src/translate/overlayrender.cpp
+    src/translate/secretstore.h
     src/update/updater.h src/update/updater.cpp
 )
 
@@ -73,6 +78,7 @@ if(WIN32)
         src/platform/win/uiaelements.cpp
         src/platform/win/winhotkeymanager.cpp
         src/platform/win/winwheelthrottle.cpp
+        src/translate/secretstore_win.cpp
     )
 elseif(APPLE)
     set(PLATFORM_SOURCES
@@ -82,6 +88,9 @@ elseif(APPLE)
         src/platform/mac/macwindowfinder.mm
         src/platform/mac/machotkeymanager.mm
         src/platform/mac/macwheelthrottle.mm
+        src/translate/mac/secretstore_mac.mm
+        src/translate/systemengine.h
+        src/translate/mac/systemengine.mm
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(PLATFORM_SOURCES
@@ -90,6 +99,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/platform/linux/x11windowfinder.cpp
         src/platform/linux/x11hotkeymanager.cpp
         src/platform/linux/portalcapturer.cpp
+        src/translate/secretstore_linux.cpp
     )
 else()
     set(PLATFORM_SOURCES src/platform/generic/genericplatform.cpp)
@@ -163,8 +173,9 @@ snappin_download(${_ocr_url}/det/ch_PP-OCRv5_det_mobile.onnx ${_deps}/ocr/det.on
 snappin_download(${_ocr_url}/rec/ch_PP-OCRv5_rec_mobile.onnx ${_deps}/ocr/rec.onnx
                  5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5)
 
-# OCR 引擎（程序和测试共用）
-add_library(snappin_ocr STATIC src/ocr/ocrtext.h src/ocr/ocrtext.cpp src/ocr/ppocr.h src/ocr/ppocr.cpp)
+# OCR 引擎（程序和测试共用）；翻译用到的文字处理也放在这里
+add_library(snappin_ocr STATIC src/ocr/ocrtext.h src/ocr/ocrtext.cpp src/ocr/ppocr.h src/ocr/ppocr.cpp
+                               src/translate/translatetext.h src/translate/translatetext.cpp)
 target_include_directories(snappin_ocr PUBLIC src)
 target_link_libraries(snappin_ocr PUBLIC Qt6::Gui onnxruntime)
 # 模型是程序外的文件（不编进可执行文件，否则 macOS 通用二进制的两个切片各存一份）：
@@ -203,6 +214,43 @@ target_compile_definitions(SnapPin PRIVATE
 )
 target_link_libraries(SnapPin PRIVATE Qt6::Widgets Qt6::Network snappin_ocr)
 
+# macOS 系统翻译：Translation 框架只有 Swift 接口。按每个架构用 swiftc 编成静态库再 lipo 合并
+# （CMake 的 Swift 支持在 Ninja + 多架构下不可用）。Translation 框架弱链接，macOS 14、15 上照样能启动
+if(APPLE)
+    set(_swift_archs ${CMAKE_OSX_ARCHITECTURES})
+    if(NOT _swift_archs)
+        set(_swift_archs ${CMAKE_HOST_SYSTEM_PROCESSOR})
+    endif()
+    set(_swift_src ${CMAKE_CURRENT_SOURCE_DIR}/src/translate/mac/systemtranslate.swift)
+    set(_swift_dir ${CMAKE_BINARY_DIR}/swift)
+    set(_swift_libs)
+    foreach(arch ${_swift_archs})
+        set(_lib ${_swift_dir}/${arch}/libsystemtranslate.a)
+        add_custom_command(OUTPUT ${_lib}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${_swift_dir}/${arch}
+            COMMAND xcrun swiftc -parse-as-library -emit-library -static -O -swift-version 5
+                    -module-name SnapPinSystemTranslate -module-cache-path ${_swift_dir}/module-cache
+                    -target ${arch}-apple-macos${CMAKE_OSX_DEPLOYMENT_TARGET}
+                    -Xfrontend -disable-autolink-framework -Xfrontend Translation
+                    ${_swift_src} -o ${_lib}
+            DEPENDS ${_swift_src} VERBATIM)
+        list(APPEND _swift_libs ${_lib})
+    endforeach()
+    set(SWIFT_TRANSLATE_LIB ${_swift_dir}/libsystemtranslate.a)
+    add_custom_command(OUTPUT ${SWIFT_TRANSLATE_LIB}
+        COMMAND lipo -create ${_swift_libs} -output ${SWIFT_TRANSLATE_LIB}
+        DEPENDS ${_swift_libs} VERBATIM)
+    add_custom_target(snappin_systemtranslate DEPENDS ${SWIFT_TRANSLATE_LIB})
+    add_dependencies(SnapPin snappin_systemtranslate)
+    # 链接 Swift 运行库：系统自带的在 SDK 的 usr/lib/swift，兼容库在工具链里
+    execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE _sdk OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND xcrun --find swiftc OUTPUT_VARIABLE _swiftc OUTPUT_STRIP_TRAILING_WHITESPACE)
+    get_filename_component(_toolchain_bin ${_swiftc} DIRECTORY)
+    target_link_directories(SnapPin PRIVATE ${_sdk}/usr/lib/swift ${_toolchain_bin}/../lib/swift/macosx)
+    target_link_libraries(SnapPin PRIVATE ${SWIFT_TRANSLATE_LIB} "-weak_framework Translation"
+                          "-framework NaturalLanguage" "-framework SwiftUI" "-framework Security")
+endif()
+
 option(SNAPPIN_BUILD_TESTS "Build unit tests" ON)
 if(SNAPPIN_BUILD_TESTS)
     enable_testing()
@@ -218,6 +266,10 @@ if(SNAPPIN_BUILD_TESTS)
     target_include_directories(ocrtext_test PRIVATE src)
     target_link_libraries(ocrtext_test PRIVATE Qt6::Gui)
     add_test(NAME ocrtext COMMAND ocrtext_test)
+    qt_add_executable(translatetext_test tests/translatetext_test.cpp src/translate/translatetext.cpp src/ocr/ocrtext.cpp)
+    target_include_directories(translatetext_test PRIVATE src)
+    target_link_libraries(translatetext_test PRIVATE Qt6::Gui)
+    add_test(NAME translatetext COMMAND translatetext_test)
     qt_add_executable(ppocr_test tests/ppocr_test.cpp)
     target_link_libraries(ppocr_test PRIVATE snappin_ocr)
     snappin_copy_ocr_models(ppocr_test)
@@ -227,7 +279,7 @@ endif()
 
 if(WIN32)
     target_compile_definitions(SnapPin PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(SnapPin PRIVATE user32 gdi32 dwmapi d3d11 dxgi ole32 oleaut32)
+    target_link_libraries(SnapPin PRIVATE user32 gdi32 dwmapi d3d11 dxgi ole32 oleaut32 advapi32)
 endif()
 
 if(APPLE)

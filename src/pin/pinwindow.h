@@ -26,6 +26,12 @@ public:
     // 窗口四周留有阴影边距，定位以图片左上角为准
     QPoint imagePos() const;
     void moveImageTo(const QPoint& globalTopLeft);
+    void setStatus(const QString& text); // 常驻在图片中间的状态提示（正在翻译…），空表示不显示
+    // 换成译文图，记住原图；之后按 T 在原文和译文之间切换
+    void showTranslation(const QImage& translated);
+    bool hasTranslation() const { return !m_translated.isNull(); }
+    QImage originalImage() const { return m_original; }
+    void toggleTranslation();
 
     // 鼠标穿透：点击直接落到下面的窗口，贴图只当参考图；穿透后只能从托盘菜单取消
     void setClickThrough(bool on);
@@ -39,6 +45,7 @@ signals:
     void closeAllRequested();
     void editRequested();
     void ocrRequested();
+    void translateRequested();
     void closing(const PinSnapshot& state);
     void clickThroughChanged(bool on);
 
@@ -62,6 +69,7 @@ private:
     void setScale(qreal scale, const QPoint& anchorGlobal);
     void toggleThumbnail();
     void showHint(const QString& text);
+    void applyImage(const QImage& image);
     void rotate(int quarterTurns);
     void flip(bool horizontal);
     void updateView(); // 按旋转、翻转生成显示用的图，保持图片中心不动
@@ -71,6 +79,9 @@ private:
 
     QImage m_source;   // 原图
     QImage m_view;     // 旋转、翻转后的图
+    QImage m_original;   // 翻译前看到的图
+    QImage m_translated; // 译文图，没翻译过为空
+    bool m_showingTranslation = false;
     int m_rotation = 0; // 顺时针 90° 的次数
     bool m_flipH = false;
     bool m_flipV = false;
@@ -79,6 +90,7 @@ private:
     qreal m_scaleBeforeThumbnail = 1.0;
     qreal m_opacityBeforeClickThrough = 1.0;
     QString m_hint;
+    QString m_status;
     QTimer m_hintTimer;
     bool m_dragging = false;
     QPoint m_dragOffset;

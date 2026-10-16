@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ocrtext.h"
+
 #include <QImage>
 #include <QObject>
 #include <QThreadPool>
@@ -12,6 +14,7 @@ class PpOcrEngine;
 struct OcrResult {
     QString text;  // 识别出的文字，按行用 \n 分隔
     QString error; // 识别失败的原因，为空表示成功
+    QList<OcrFragment> fragments; // 每段文字和它在图里的位置（像素坐标），翻译后贴回原处用
 };
 
 // 文字识别（OCR）：在后台线程里调用 PP-OCRv5，结果在主线程回调；context 销毁后不再回调。

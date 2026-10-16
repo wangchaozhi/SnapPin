@@ -39,8 +39,10 @@ void TextRecognizer::recognize(const QImage& image, QObject* context, Callback o
                 else
                     result.error = tr("无法加载文字识别模型：%1").arg(error);
             }
-            if (m_engine)
-                result.text = assembleOcrText(m_engine->recognize(image));
+            if (m_engine) {
+                result.fragments = m_engine->recognize(image);
+                result.text = assembleOcrText(result.fragments);
+            }
         } catch (const std::exception& e) {
             result.error = tr("文字识别失败：%1").arg(QString::fromUtf8(e.what()));
         }

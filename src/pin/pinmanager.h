@@ -31,6 +31,7 @@ public:
 signals:
     void editRequested(PinWindow* pin);
     void ocrRequested(const QImage& image);
+    void translateRequested(PinWindow* pin);
     void clickThroughEnabled(); // 有贴图开启了鼠标穿透（提示怎么恢复）
 
 private:
