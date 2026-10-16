@@ -26,7 +26,7 @@ signals:
     void cancelRequested();
 
 private:
-    QToolButton* addButton(const QString& text, const QString& tip);
+    QToolButton* addButton(const QIcon& icon, const QString& tip);
     void updateStyleButtons();
 
     QHash<ToolType, QToolButton*> m_toolButtons;

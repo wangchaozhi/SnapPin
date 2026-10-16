@@ -1,10 +1,10 @@
 #include "editortoolbar.h"
 
 #include "platform/platform.h"
+#include "toolicons.h"
 
 #include <QColorDialog>
 #include <QHBoxLayout>
-#include <QPainter>
 #include <QToolButton>
 #include <QUndoStack>
 
@@ -16,12 +16,15 @@ struct WidthLevel {
 };
 constexpr WidthLevel kWidths[] = {{2, "细"}, {4, "中"}, {8, "粗"}};
 
+constexpr int kIconSize = 20;
+constexpr int kButtonSize = 32;
+
 QFrame* separator(QWidget* parent)
 {
     auto* line = new QFrame(parent);
-    line->setFrameShape(QFrame::VLine);
-    line->setFixedWidth(1);
-    line->setStyleSheet(QStringLiteral("background:#d0d0d0;"));
+    line->setFrameShape(QFrame::NoFrame);
+    line->setFixedSize(1, kIconSize);
+    line->setStyleSheet(QStringLiteral("background:#dcdcdc;"));
     return line;
 }
 
@@ -33,31 +36,31 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     setObjectName(QStringLiteral("EditorToolbar"));
     setCursor(Qt::ArrowCursor);
     setStyleSheet(QStringLiteral(
-        "#EditorToolbar{background:#fafafa;border:1px solid #b8b8b8;border-radius:4px;}"
-        "QToolButton{border:none;border-radius:3px;min-width:28px;min-height:28px;font-size:15px;color:#333;}"
-        "QToolButton:hover{background:#e6e6e6;}"
-        "QToolButton:checked{background:#cfe8ff;}"
-        "QToolButton:disabled{color:#bbb;}"));
+        "#EditorToolbar{background:#fbfbfb;border:1px solid #c6c6c6;border-radius:6px;}"
+        "QToolButton{border:none;border-radius:5px;background:transparent;}"
+        "QToolButton:hover{background:#ececec;}"
+        "QToolButton:pressed{background:#e0e0e0;}"
+        "QToolButton:checked{background:#e3eeff;}"));
 
     auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(4, 3, 4, 3);
+    layout->setContentsMargins(5, 4, 5, 4);
     layout->setSpacing(2);
 
     const struct {
         ToolType type;
-        const char* text;
+        ToolIcon icon;
         const char* tip;
     } tools[] = {
-        {ToolType::Rect, "▭", "矩形"},
-        {ToolType::Ellipse, "◯", "椭圆"},
-        {ToolType::Arrow, "➚", "箭头"},
-        {ToolType::Pen, "✎", "画笔"},
-        {ToolType::Marker, "▌", "荧光笔"},
-        {ToolType::Mosaic, "▦", "马赛克"},
-        {ToolType::Text, "T", "文字"},
+        {ToolType::Rect, ToolIcon::Rect, "矩形"},
+        {ToolType::Ellipse, ToolIcon::Ellipse, "椭圆"},
+        {ToolType::Arrow, ToolIcon::Arrow, "箭头"},
+        {ToolType::Pen, ToolIcon::Pen, "画笔"},
+        {ToolType::Marker, ToolIcon::Marker, "荧光笔"},
+        {ToolType::Mosaic, ToolIcon::Mosaic, "马赛克"},
+        {ToolType::Text, ToolIcon::Text, "文字"},
     };
     for (const auto& t : tools) {
-        QToolButton* b = addButton(QString::fromUtf8(t.text), QString::fromUtf8(t.tip));
+        QToolButton* b = addButton(toolIcon(t.icon), QString::fromUtf8(t.tip));
         b->setCheckable(true);
         const ToolType type = t.type;
         connect(b, &QToolButton::clicked, this, [this, type] { emit toolClicked(type); });
@@ -66,7 +69,7 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
 
     layout->addWidget(separator(this));
 
-    m_colorButton = addButton(QString(), tr("颜色"));
+    m_colorButton = addButton(QIcon(), tr("颜色"));
     connect(m_colorButton, &QToolButton::clicked, this, [this] {
         const QColor c = QColorDialog::getColor(m_style.color, window(), tr("选择颜色"));
         if (!c.isValid())
@@ -76,7 +79,7 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
         emit styleChanged(m_style);
     });
 
-    m_widthButton = addButton(QString(), tr("粗细（点击切换）"));
+    m_widthButton = addButton(QIcon(), QString());
     connect(m_widthButton, &QToolButton::clicked, this, [this] {
         int idx = 0;
         for (int i = 0; i < int(std::size(kWidths)); ++i) {
@@ -90,8 +93,8 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
 
     layout->addWidget(separator(this));
 
-    QToolButton* undoBtn = addButton(QStringLiteral("↶"), tr("撤销 (Ctrl+Z)"));
-    QToolButton* redoBtn = addButton(QStringLiteral("↷"), tr("重做 (Ctrl+Y)"));
+    QToolButton* undoBtn = addButton(toolIcon(ToolIcon::Undo), tr("撤销 (Ctrl+Z)"));
+    QToolButton* redoBtn = addButton(toolIcon(ToolIcon::Redo), tr("重做 (Ctrl+Y)"));
     undoBtn->setEnabled(undo->canUndo());
     redoBtn->setEnabled(undo->canRedo());
     connect(undoBtn, &QToolButton::clicked, undo, &QUndoStack::undo);
@@ -102,22 +105,27 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     layout->addWidget(separator(this));
 
     if (scrollCaptureSupported()) {
-        connect(addButton(QStringLiteral("⇕"), tr("长截图：滚动选区内容自动拼接 (Ctrl+L)")), &QToolButton::clicked, this,
-                &EditorToolbar::longCaptureRequested);
+        connect(addButton(toolIcon(ToolIcon::LongCapture), tr("长截图：滚动选区内容自动拼接 (Ctrl+L)")),
+                &QToolButton::clicked, this, &EditorToolbar::longCaptureRequested);
     }
-    connect(addButton(QStringLiteral("📌"), tr("贴图 (Ctrl+T)")), &QToolButton::clicked, this, &EditorToolbar::pinRequested);
-    connect(addButton(QStringLiteral("💾"), tr("保存 (Ctrl+S)")), &QToolButton::clicked, this, &EditorToolbar::saveRequested);
-    connect(addButton(QStringLiteral("✕"), tr("取消 (Esc)")), &QToolButton::clicked, this, &EditorToolbar::cancelRequested);
-    connect(addButton(QStringLiteral("✓"), tr("复制到剪贴板 (Ctrl+C / 双击 / 回车)")), &QToolButton::clicked, this, &EditorToolbar::copyRequested);
+    connect(addButton(toolIcon(ToolIcon::Pin), tr("贴图 (Ctrl+T)")), &QToolButton::clicked, this, &EditorToolbar::pinRequested);
+    connect(addButton(toolIcon(ToolIcon::Save), tr("保存 (Ctrl+S)")), &QToolButton::clicked, this, &EditorToolbar::saveRequested);
+    connect(addButton(toolIcon(ToolIcon::Cancel), tr("取消 (Esc)")), &QToolButton::clicked, this, &EditorToolbar::cancelRequested);
+    // 主操作用主题色突出
+    connect(addButton(toolIcon(ToolIcon::Done, true), tr("复制到剪贴板 (Ctrl+C / 双击 / 回车)")), &QToolButton::clicked, this,
+            &EditorToolbar::copyRequested);
 
     updateStyleButtons();
     adjustSize();
 }
 
-QToolButton* EditorToolbar::addButton(const QString& text, const QString& tip)
+QToolButton* EditorToolbar::addButton(const QIcon& icon, const QString& tip)
 {
     auto* b = new QToolButton(this);
-    b->setText(text);
+    b->setIcon(icon);
+    b->setIconSize(QSize(kIconSize, kIconSize));
+    b->setFixedSize(kButtonSize, kButtonSize);
+    b->setToolButtonStyle(Qt::ToolButtonIconOnly);
     b->setToolTip(tip);
     b->setFocusPolicy(Qt::NoFocus); // 保持键盘焦点在遮罩上
     layout()->addWidget(b);
@@ -132,19 +140,12 @@ void EditorToolbar::setCurrentTool(ToolType type)
 
 void EditorToolbar::updateStyleButtons()
 {
-    QPixmap swatch(16, 16);
-    swatch.fill(Qt::transparent);
-    {
-        QPainter p(&swatch);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(QPen(QColor(0, 0, 0, 90), 1));
-        p.setBrush(m_style.color);
-        p.drawRoundedRect(QRectF(0.5, 0.5, 15, 15), 3, 3);
-    }
-    m_colorButton->setIcon(QIcon(swatch));
+    m_colorButton->setIcon(colorIcon(m_style.color));
 
-    for (const auto& w : kWidths) {
-        if (qFuzzyCompare(w.width, m_style.width))
-            m_widthButton->setText(QString::fromUtf8(w.label));
+    for (int i = 0; i < int(std::size(kWidths)); ++i) {
+        if (qFuzzyCompare(kWidths[i].width, m_style.width)) {
+            m_widthButton->setIcon(widthIcon(i));
+            m_widthButton->setToolTip(tr("粗细：%1（点击切换）").arg(QString::fromUtf8(kWidths[i].label)));
+        }
     }
 }

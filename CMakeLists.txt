@@ -49,6 +49,7 @@ set(CORE_SOURCES
     src/capture/overlaywindow.h src/capture/overlaywindow.cpp
     src/capture/overlaystates.h src/capture/overlaystates.cpp
     src/capture/editortoolbar.h src/capture/editortoolbar.cpp
+    src/capture/toolicons.h src/capture/toolicons.cpp
     src/capture/scrollstitcher.h src/capture/scrollstitcher.cpp
     src/capture/scrollcapture.h src/capture/scrollcapture.cpp
     src/pin/pinwindow.h src/pin/pinwindow.cpp
