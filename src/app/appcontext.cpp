@@ -25,7 +25,6 @@
 
 namespace {
 
-constexpr int kCaptureDelayMs = 3000;
 constexpr int kPinHideDelayMs = 120; // 隐藏贴图后等 DWM 把它从屏幕上移除再截图
 constexpr int kFirstUpdateCheckMs = 10 * 1000;          // 启动后稍等再检查，不拖慢开机
 constexpr int kUpdateIntervalMs = 24 * 60 * 60 * 1000;  // 之后每天检查一次
@@ -69,9 +68,6 @@ void AppContext::start()
 void AppContext::setupActions()
 {
     m_actions.add(QStringLiteral("capture"), tr("截图"), [this] { startCapture(); });
-    m_actions.add(QStringLiteral("capture_delayed"), tr("延时 3 秒截图"), [this] {
-        QTimer::singleShot(kCaptureDelayMs, this, &AppContext::startCapture);
-    });
     m_actions.add(QStringLiteral("pin_clipboard"), tr("贴图（剪贴板）"), [this] {
         if (!m_pins->pinClipboard() && m_tray)
             m_tray->showMessage(tr("SnapPin"), tr("剪贴板中没有图片或文字"), QSystemTrayIcon::Information, 2000);
@@ -113,7 +109,7 @@ void AppContext::setupTray()
 
 void AppContext::rebuildTrayMenu()
 {
-    static const char* const kMenu[] = {"capture", "capture_delayed", "pin_clipboard", nullptr,
+    static const char* const kMenu[] = {"capture", "pin_clipboard", nullptr,
                                         "history", "toggle_pins", "close_pins", "restore_pin", "pins_interactive", nullptr,
                                         "settings", "check_update", "quit"};
     m_trayMenu->clear();
