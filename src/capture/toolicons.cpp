@@ -229,9 +229,15 @@ Drawer drawerFor(ToolIcon id)
 
     case ToolIcon::Copy:
         return [](QPainter& p, const QColor&) {
-            // 两张叠放的纸：后面一张只露出左上角的折线，前面一张完整的圆角矩形
-            p.drawPath(polyline({{4.5, 12.5}, {4.5, 4.5}, {12.5, 4.5}}));
-            p.drawRoundedRect(QRectF(7.5, 7.5, 8.5, 8.5), 1.5, 1.5);
+            // 两张叠放的纸，用应用图标的马卡龙配色：后面一张蓝色，前面“贴”起来的一张珊瑚红。
+            // 填充色太浅，各自加一圈深一点的同色描边，浅色工具栏上也看得清
+            const qreal w = p.pen().widthF();
+            p.setPen(QPen(QColor(0x5B, 0x8D, 0xEF), w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(QColor(0xA0, 0xC4, 0xFF));
+            p.drawRoundedRect(QRectF(3.5, 3.5, 9.0, 9.0), 1.8, 1.8);
+            p.setPen(QPen(QColor(0xE0, 0x6C, 0x6C), w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(QColor(0xFF, 0xAD, 0xAD));
+            p.drawRoundedRect(QRectF(7.5, 7.5, 9.0, 9.0), 1.8, 1.8);
         };
     }
     return [](QPainter&, const QColor&) {};
@@ -241,7 +247,8 @@ Drawer drawerFor(ToolIcon id)
 
 QIcon toolIcon(ToolIcon id, bool accent)
 {
-    return makeIcon(drawerFor(id), accent);
+    // 复制按钮自带应用图标的配色，不跟随主题色
+    return makeIcon(drawerFor(id), accent, id == ToolIcon::Copy);
 }
 
 QIcon widthIcon(qreal width)
