@@ -9,6 +9,9 @@
 #include <QStandardPaths>
 #include <QWidget>
 
+#include <cstdlib>
+#include <cstring>
+
 namespace {
 
 // X11 下 Qt 自己的实现就是读根窗口（xcb_get_image），已经够用
@@ -32,6 +35,45 @@ xcb_connection_t* x11Connection()
     auto* x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
     return x11 ? x11->connection() : nullptr;
 }
+
+xcb_atom_t internAtom(xcb_connection_t* conn, const char* name)
+{
+    xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(conn, xcb_intern_atom(conn, 0, uint16_t(strlen(name)), name), nullptr);
+    const xcb_atom_t atom = reply ? reply->atom : XCB_ATOM_NONE;
+    free(reply);
+    return atom;
+}
+
+// KWin 在 X11 下支持窗口背景模糊：给窗口设 _KDE_NET_WM_BLUR_BEHIND_REGION（空区域 = 整个窗口）。
+// 只在合成器开着时有效，否则透明窗口会直接露出后面的内容
+bool kdeBlurAvailable(xcb_connection_t* conn)
+{
+    if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"), Qt::CaseInsensitive))
+        return false;
+    const xcb_atom_t cm = internAtom(conn, "_NET_WM_CM_S0");
+    xcb_get_selection_owner_reply_t* owner = xcb_get_selection_owner_reply(conn, xcb_get_selection_owner(conn, cm), nullptr);
+    const bool composited = owner && owner->owner != XCB_NONE;
+    free(owner);
+    return composited;
+}
+
+class KdeBlurFilter : public QObject {
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject* obj, QEvent* e) override
+    {
+        if (e->type() == QEvent::Show) { // 窗口每次映射前都设一次，重建原生窗口后也有效
+            if (xcb_connection_t* conn = x11Connection()) {
+                const auto wid = xcb_window_t(static_cast<QWidget*>(obj)->winId());
+                xcb_change_property(conn, XCB_PROP_MODE_REPLACE, wid, internAtom(conn, "_KDE_NET_WM_BLUR_BEHIND_REGION"),
+                                    XCB_ATOM_CARDINAL, 32, 0, nullptr);
+                xcb_flush(conn);
+            }
+        }
+        return false;
+    }
+};
 
 QString autostartPath()
 {
@@ -100,6 +142,17 @@ void setupFloatingWindow(QWidget* window, FloatingLayer layer)
         // 长截图边框和面板不需要焦点，绕过窗口管理器，可以精确定位并盖住面板
         window->setWindowFlag(Qt::X11BypassWindowManagerHint);
     }
+}
+
+bool setupGlassBackground(QWidget* window)
+{
+    // GNOME 和 Wayland 合成器没有通用的背景模糊接口，保持原样
+    xcb_connection_t* conn = isWayland() ? nullptr : x11Connection();
+    if (!conn || !kdeBlurAvailable(conn))
+        return false;
+    window->setAttribute(Qt::WA_TranslucentBackground);
+    window->installEventFilter(new KdeBlurFilter(window));
+    return true;
 }
 
 bool scrollCaptureSupported()

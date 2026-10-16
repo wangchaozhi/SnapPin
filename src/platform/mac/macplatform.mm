@@ -91,7 +91,51 @@ private:
     FloatingLayer m_layer;
 };
 
+// 系统毛玻璃（behind-window 混合，透出模糊后的桌面）插到 Qt 内容视图下面，铺满整个窗口（含标题栏）。
+// 不用 NSGlassEffectView：它只折射同一窗口里在它下面的内容，当窗口背景时是不透明的白色；
+// 也不能把它设成 contentView 再把 Qt 的视图放进去，Qt 显示窗口时会重设内容视图
+class GlassFilter : public QObject {
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject* obj, QEvent* e) override
+    {
+        if (e->type() == QEvent::Show && !m_installed) {
+            m_installed = true;
+            auto* w = static_cast<QWidget*>(obj);
+            QTimer::singleShot(0, w, [w] { install(w); }); // 等原生窗口建好
+        }
+        return false;
+    }
+
+private:
+    static void install(QWidget* w)
+    {
+        auto* content = (__bridge NSView*)reinterpret_cast<void*>(w->winId());
+        NSView* frame = content.superview;
+        if (!frame)
+            return;
+        auto* effect = [[NSVisualEffectView alloc] initWithFrame:frame.bounds];
+        effect.material = NSVisualEffectMaterialPopover;
+        effect.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+        effect.state = NSVisualEffectStateActive; // 窗口失去焦点时也保持模糊
+        effect.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [frame addSubview:effect positioned:NSWindowBelow relativeTo:content];
+    }
+
+    bool m_installed = false;
+};
+
 } // namespace
+
+bool setupGlassBackground(QWidget* window)
+{
+    window->setAttribute(Qt::WA_TranslucentBackground);
+    // 内容延伸到透明标题栏下面，整扇窗是一块玻璃；控件仍按安全区域避开标题栏
+    window->setWindowFlag(Qt::ExpandedClientAreaHint);
+    window->installEventFilter(new GlassFilter(window));
+    return true;
+}
 
 Platform createPlatform()
 {

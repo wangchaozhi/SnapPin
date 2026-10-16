@@ -34,6 +34,7 @@ OcrWindow::OcrWindow()
     resize(520, 360);
     // 与贴图同一层，从贴图识别时结果窗口不会被贴图挡住
     setupFloatingWindow(this, FloatingLayer::Pin);
+    m_glass = setupGlassBackground(this);
 
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse); // 安装命令可以直接选中复制
@@ -52,8 +53,6 @@ OcrWindow::OcrWindow()
 
     // 查找 / 替换：浮在文本框右上角的面板。Ctrl+F、Ctrl+H 打开，Esc 收起。回车查找下一个，Shift+回车查找上一个
     m_findBar->setObjectName(QStringLiteral("findPanel"));
-    m_findBar->setStyleSheet(QStringLiteral(
-        "#findPanel { background: palette(window); border: 1px solid palette(mid); border-radius: 6px; }"));
     m_findEdit->setPlaceholderText(tr("查找"));
     m_replaceEdit->setPlaceholderText(tr("替换为"));
     for (QLineEdit* e : {m_findEdit, m_replaceEdit})
@@ -145,6 +144,32 @@ OcrWindow::OcrWindow()
     layout->addWidget(m_edit, 1);
     layout->addLayout(buttons);
     setStatus(tr("正在识别文字…"), false);
+    applyColors();
+}
+
+// 毛玻璃背景下文本框和查找面板只留一层淡淡的底色，透出后面的玻璃；跟随系统深浅色切换
+void OcrWindow::applyColors()
+{
+    const QPalette pal = QGuiApplication::palette();
+    QColor panel = pal.color(QPalette::Window);
+    if (m_glass) {
+        QPalette editPal = m_edit->palette();
+        QColor base = pal.color(QPalette::Base);
+        base.setAlpha(90);
+        editPal.setColor(QPalette::Base, base);
+        m_edit->setPalette(editPal);
+        m_edit->setFrameShape(QFrame::NoFrame);
+        panel.setAlpha(225);
+    }
+    m_findBar->setStyleSheet(QStringLiteral("#findPanel { background: %1; border: 1px solid %2; border-radius: 8px; }")
+                                 .arg(panel.name(QColor::HexArgb), pal.color(QPalette::Mid).name()));
+}
+
+void OcrWindow::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::ApplicationPaletteChange)
+        applyColors();
+    QWidget::changeEvent(e);
 }
 
 void OcrWindow::setResult(const OcrResult& result)

@@ -22,10 +22,12 @@ public:
 protected:
     void keyPressEvent(QKeyEvent* e) override;
     bool eventFilter(QObject* watched, QEvent* e) override;
+    void changeEvent(QEvent* e) override;
 
 private:
     void copyAll();
     void setStatus(const QString& text, bool warning);
+    void applyColors();
     void showFindBar(bool replace);
     void hideFindBar();
     void placeFindBar();
@@ -44,4 +46,5 @@ private:
     QLabel* m_matchLabel;
     QPushButton* m_copyButton;
     QString m_findHint;
+    bool m_glass = false; // 背景是系统毛玻璃
 };

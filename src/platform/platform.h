@@ -94,6 +94,10 @@ enum class FloatingLayer {
 // 在窗口构造时调用一次；层级在每次显示时生效。Overlay 显示时会把本程序切到前台（除非窗口不接受焦点）
 void setupFloatingWindow(QWidget* window, FloatingLayer layer);
 
+// 窗口背景换成系统的毛玻璃（macOS 26 起是液态玻璃）。在窗口构造时调用；不支持的平台返回 false，窗口保持原样。
+// 返回 true 时窗口背景透明，调用方要把自己的控件背景也调成半透明
+bool setupGlassBackground(QWidget* window);
+
 // 长截图：边框和面板要摆在选区周围，还要每 50ms 截一次屏。Wayland 下两者都做不到
 bool scrollCaptureSupported();
 
