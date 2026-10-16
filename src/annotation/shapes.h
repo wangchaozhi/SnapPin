@@ -22,6 +22,7 @@ struct Style {
 
 struct RenderContext {
     const QPixmap* source = nullptr; // 原始截图（马赛克取样用），已设置 devicePixelRatio
+    QPoint origin;                   // source 左上角所在的局部逻辑坐标（跨屏选区时是拼起来的多屏截图）
 };
 
 // 标注图形：坐标为截图所在屏幕的局部逻辑坐标

@@ -153,6 +153,11 @@ void OverlayWindow::setState(std::unique_ptr<OverlayState> state)
 {
     m_retiredState = std::move(m_state);
     m_state = std::move(state);
+    // 离开空闲状态（开始框选 / 已有选区）就成为主遮罩，其他屏幕的遮罩跟着显示；回到空闲时各自独立
+    if (dynamic_cast<IdleState*>(m_state.get()))
+        releaseLead();
+    else
+        becomeLead();
     update();
 }
 
@@ -199,9 +204,20 @@ int OverlayWindow::snap(int value, Qt::Orientation o, bool farEdge, const QPoint
     if (QGuiApplication::queryKeyboardModifiers() & Qt::AltModifier)
         return value;
 
+    const bool horizontal = o == Qt::Horizontal;
+    // 光标在别的屏幕上（跨屏选区）：按那块屏幕上的窗口吸附
+    if (!rect().contains(near)) {
+        for (const OverlayWindow* peer : m_peers) {
+            const QPoint off = offsetTo(peer);
+            if (peer != this && peer->rect().contains(near + off)) {
+                const int d = horizontal ? off.x() : off.y();
+                return peer->snap(value + d, o, farEdge, near + off) - d;
+            }
+        }
+    }
+
     // 候选边：没被更上层窗口完全盖住的顶层窗口 + 光标所在窗口里的控件 + 屏幕边缘。
     // 选区的右 / 下边是包含在内的坐标，所以远边吸到“窗口右边”或“紧挨着另一个窗口左边之前”
-    const bool horizontal = o == Qt::Horizontal;
     int best = value;
     int bestDist = kSnapDistance + 1;
     auto consider = [&](const QRect& r) {
@@ -333,16 +349,19 @@ void OverlayWindow::selectTool(ToolType type)
 
 QImage OverlayWindow::renderResult() const
 {
-    const qreal dpr = m_shot.devicePixelRatio();
-    const QRect phys = QRectF(m_selection.x() * dpr, m_selection.y() * dpr,
-                              m_selection.width() * dpr, m_selection.height() * dpr).toRect()
-                       & QRect(QPoint(0, 0), m_shot.size());
-    QPixmap out = m_shot.copy(phys);
+    // 跨屏选区从拼起来的多屏截图里取（其他屏幕的部分按本屏缩放比例换算）
+    const QPixmap& src = m_composite.isNull() ? m_shot : m_composite;
+    const QPoint origin = m_composite.isNull() ? QPoint() : m_renderCtx.origin;
+    const qreal dpr = src.devicePixelRatio();
+    const QRect sel = m_selection.translated(-origin);
+    const QRect phys = QRectF(sel.x() * dpr, sel.y() * dpr, sel.width() * dpr, sel.height() * dpr).toRect()
+                       & QRect(QPoint(0, 0), src.size());
+    QPixmap out = src.copy(phys);
     out.setDevicePixelRatio(dpr);
     {
         QPainter p(&out);
         p.setRenderHint(QPainter::Antialiasing);
-        p.translate(-phys.x() / dpr, -phys.y() / dpr);
+        p.translate(-phys.x() / dpr - origin.x(), -phys.y() / dpr - origin.y());
         m_doc.paint(p, m_renderCtx);
     }
     return out.toImage();
@@ -364,6 +383,121 @@ void OverlayWindow::cancel()
     emit cancelled();
 }
 
+// ---------------- 跨屏：主遮罩与镜像 ----------------
+
+QPoint OverlayWindow::offsetTo(const OverlayWindow* other) const
+{
+    return m_screen->geometry().topLeft() - other->m_screen->geometry().topLeft();
+}
+
+QRect OverlayWindow::bounds() const
+{
+    if (m_peers.size() <= 1)
+        return rect();
+    QRect all;
+    for (const OverlayWindow* peer : m_peers)
+        all |= peer->m_screen->geometry();
+    return all.translated(-m_screen->geometry().topLeft());
+}
+
+void OverlayWindow::becomeLead()
+{
+    if (m_peers.size() <= 1)
+        return;
+    for (OverlayWindow* peer : std::as_const(m_peers)) {
+        if (peer == this || peer->m_lead == this)
+            continue;
+        peer->m_lead = this;
+        peer->setHover({});
+        peer->update();
+    }
+    if (!m_composite.isNull())
+        return;
+    // 把所有屏幕的截图按本屏的缩放比例拼成一张，标注（马赛克、橡皮擦）和出图都从它取
+    QRect all;
+    for (const OverlayWindow* peer : std::as_const(m_peers))
+        all |= peer->m_screen->geometry();
+    const qreal dpr = m_shot.devicePixelRatio();
+    QPixmap composite((QSizeF(all.size()) * dpr).toSize());
+    composite.setDevicePixelRatio(dpr);
+    composite.fill(Qt::black);
+    {
+        QPainter p(&composite);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        for (const OverlayWindow* peer : std::as_const(m_peers)) {
+            const QRect g = peer->m_screen->geometry();
+            p.drawPixmap(QRect(g.topLeft() - all.topLeft(), g.size()), peer->m_shot);
+        }
+    }
+    m_composite = composite;
+    m_renderCtx.source = &m_composite;
+    m_renderCtx.origin = all.topLeft() - m_screen->geometry().topLeft();
+}
+
+void OverlayWindow::releaseLead()
+{
+    for (OverlayWindow* peer : std::as_const(m_peers)) {
+        if (peer->m_lead != this)
+            continue;
+        peer->m_lead = nullptr;
+        peer->update();
+        peer->refreshHover();
+    }
+}
+
+bool OverlayWindow::forwardToLead(QMouseEvent* e)
+{
+    if (!m_lead)
+        return false;
+    m_cursor = e->position().toPoint();
+    m_cursorInside = rect().contains(m_cursor);
+    OverlayWindow* lead = m_lead;
+    QMouseEvent fwd(e->type(), e->position() + QPointF(offsetTo(lead)), e->globalPosition(), e->button(), e->buttons(),
+                    e->modifiers());
+    switch (e->type()) {
+    case QEvent::MouseButtonPress: lead->mousePressEvent(&fwd); break;
+    case QEvent::MouseButtonRelease: lead->mouseReleaseEvent(&fwd); break;
+    case QEvent::MouseButtonDblClick: lead->mouseDoubleClickEvent(&fwd); break;
+    default: lead->mouseMoveEvent(&fwd); break;
+    }
+    if (m_lead) // 主遮罩处理时可能已经放弃选区、回到各自独立
+        setCursor(m_lead->cursor());
+    update();
+    return true;
+}
+
+void OverlayWindow::paintMirror(QPainter& p)
+{
+    // 镜像：本屏截图 + 主遮罩的选区、标注、边框，平移到本屏坐标
+    const OverlayWindow* lead = m_lead;
+    const QPoint off = lead->offsetTo(this);
+    p.drawPixmap(0, 0, m_shot);
+    p.save();
+    p.setClipRegion(QRegion(rect()).subtracted(QRegion(lead->m_selection.translated(off))));
+    p.fillRect(rect(), QColor(0, 0, 0, 110));
+    p.restore();
+
+    p.save();
+    p.translate(off);
+    if (lead->hasSelection()) {
+        p.save();
+        p.setClipRect(lead->m_selection);
+        p.setRenderHint(QPainter::Antialiasing);
+        lead->m_doc.paint(p, lead->m_renderCtx);
+        if (lead->m_tool)
+            lead->m_tool->paintPreview(p, lead->m_renderCtx);
+        p.restore();
+        lead->paintSizeLabel(p);
+    }
+    lead->m_state->paint(p);
+    if (lead->m_widthHintTimer.isActive() && m_cursorInside)
+        lead->paintWidthHint(p);
+    p.restore();
+
+    if (lead->m_state->showMagnifier() && m_cursorInside)
+        paintMagnifier(p);
+}
+
 QPoint OverlayWindow::physicalCursor() const
 {
     return (QPointF(m_cursor) * m_shot.devicePixelRatio()).toPoint();
@@ -380,6 +514,15 @@ QColor OverlayWindow::colorAtCursor() const
 void OverlayWindow::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
+    if (m_lead) {
+        paintMirror(p);
+        return;
+    }
+    // 镜像跟着主遮罩一起重绘（镜像自己重绘不会再触发主遮罩，不会循环）
+    for (OverlayWindow* peer : std::as_const(m_peers)) {
+        if (peer->m_lead == this)
+            peer->update();
+    }
     p.drawPixmap(0, 0, m_shot);
 
     const QRect highlight = hasSelection() ? m_selection : m_hover;
@@ -454,18 +597,31 @@ void OverlayWindow::paintWidthHint(QPainter& p) const
 
 void OverlayWindow::wheelEvent(QWheelEvent* e)
 {
-    // 滚轮调粗细：选中了已画的图形时改它，否则改当前工具
-    Shape* shape = m_doc.selected();
-    if (!hasSelection() || (!shape && m_toolType == ToolType::None)) {
-        QWidget::wheelEvent(e);
+    const QPoint pos = e->position().toPoint();
+    if (m_lead) {
+        m_cursor = pos;
+        m_cursorInside = true;
+        if (!m_lead->handleWheel(pos + offsetTo(m_lead), e->angleDelta().y()))
+            QWidget::wheelEvent(e);
+        update();
         return;
     }
-    m_cursor = e->position().toPoint(); // 预览画在滚动时的光标处，不依赖之前的鼠标移动
-    m_cursorInside = true;
-    m_wheelAccum += e->angleDelta().y();
+    if (!handleWheel(pos, e->angleDelta().y()))
+        QWidget::wheelEvent(e);
+}
+
+bool OverlayWindow::handleWheel(const QPoint& pos, int deltaY)
+{
+    // 滚轮调粗细：选中了已画的图形时改它，否则改当前工具
+    Shape* shape = m_doc.selected();
+    if (!hasSelection() || (!shape && m_toolType == ToolType::None))
+        return false;
+    m_cursor = pos; // 预览画在滚动时的光标处，不依赖之前的鼠标移动
+    m_cursorInside = rect().contains(pos);
+    m_wheelAccum += deltaY;
     const int steps = m_wheelAccum / 120; // 高精度滚轮 / 触控板的小增量累计成整格
     if (steps == 0)
-        return;
+        return true;
     m_wheelAccum -= steps * 120;
 
     Style s = shape ? shape->style : m_toolCtx.style;
@@ -481,6 +637,7 @@ void OverlayWindow::wheelEvent(QWheelEvent* e)
         m_widthHintTimer.start();
         update();
     }
+    return true;
 }
 
 void OverlayWindow::stepRegionHistory(int direction)
@@ -575,15 +732,30 @@ void OverlayWindow::paintMagnifier(QPainter& p) const
 
 void OverlayWindow::mousePressEvent(QMouseEvent* e)
 {
+    if (forwardToLead(e))
+        return;
     m_retiredState.reset();
     m_state->mousePress(e);
 }
 
 void OverlayWindow::mouseMoveEvent(QMouseEvent* e)
 {
+    if (forwardToLead(e))
+        return;
     m_retiredState.reset();
     m_cursor = e->position().toPoint();
-    m_cursorInside = true;
+    m_cursorInside = rect().contains(m_cursor); // 跨屏拖动时光标可能在别的屏幕上
+    // 光标在镜像屏幕上时由镜像画放大镜
+    for (OverlayWindow* peer : std::as_const(m_peers)) {
+        if (peer->m_lead != this)
+            continue;
+        const QPoint c = m_cursor + offsetTo(peer);
+        const bool inside = peer->rect().contains(c);
+        if (inside || peer->m_cursorInside) {
+            peer->m_cursor = c;
+            peer->m_cursorInside = inside;
+        }
+    }
     m_state->mouseMove(e);
     if (m_state->showMagnifier())
         update();
@@ -591,12 +763,16 @@ void OverlayWindow::mouseMoveEvent(QMouseEvent* e)
 
 void OverlayWindow::mouseReleaseEvent(QMouseEvent* e)
 {
+    if (forwardToLead(e))
+        return;
     m_retiredState.reset();
     m_state->mouseRelease(e);
 }
 
 void OverlayWindow::mouseDoubleClickEvent(QMouseEvent* e)
 {
+    if (forwardToLead(e))
+        return;
     m_retiredState.reset();
     m_state->mouseDoubleClick(e);
 }
@@ -625,6 +801,10 @@ void OverlayWindow::leaveEvent(QEvent*)
 
 void OverlayWindow::keyPressEvent(QKeyEvent* e)
 {
+    if (m_lead) { // 镜像屏幕得到焦点时（在这块屏幕上点过），按键交给主遮罩
+        m_lead->keyPressEvent(e);
+        return;
+    }
     m_retiredState.reset();
 
     if (e->key() == Qt::Key_Escape) {
@@ -698,7 +878,7 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
             r.setBottomRight(r.bottomRight() + d);
         else
             r.translate(d);
-        r &= rect();
+        r &= bounds();
         if (!r.isEmpty())
             setSelection(r);
     } else if (!hasSelection()) {

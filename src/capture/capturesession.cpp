@@ -41,6 +41,8 @@ void CaptureSession::start()
         if (screens[i]->geometry().contains(QCursor::pos()))
             active = w;
     }
+    for (OverlayWindow* w : std::as_const(m_overlays))
+        w->setPeers(m_overlays); // 选区可以跨屏
     showAll(active);
 }
 

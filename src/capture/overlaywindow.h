@@ -16,7 +16,9 @@ class OverlayState;
 
 enum class FinishAction { Copy, Save, QuickSave, Pin, LongCapture };
 
-// 单块屏幕上的截图遮罩。交互逻辑委托给 OverlayState（状态模式）
+// 单块屏幕上的截图遮罩。交互逻辑委托给 OverlayState（状态模式）。
+// 多屏时开始框选的那块屏幕的遮罩是“主遮罩”，持有选区和标注，坐标可以超出本屏延伸到其他屏幕；
+// 其他屏幕的遮罩变成它的“镜像”：画出选区落在本屏的部分，并把鼠标键盘输入转给主遮罩
 class OverlayWindow : public QWidget {
     Q_OBJECT
 public:
@@ -34,6 +36,10 @@ public:
     // 跨过空白），新框要稳定一小段时间才换，避免框选来回跳
     void proposeHover(const QRect& r, const QPoint& cursor);
     QRect hover() const { return m_hover; }
+    // 同一次截图的所有遮罩（包括自己），用于跨屏选区
+    void setPeers(const QList<OverlayWindow*>& peers) { m_peers = peers; }
+    // 选区能到达的范围：所有屏幕合起来（本屏局部逻辑坐标）
+    QRect bounds() const;
     QRect selection() const { return m_selection; }
     bool hasSelection() const { return !m_selection.isEmpty(); }
     void setSelection(const QRect& r);
@@ -67,6 +73,12 @@ protected:
 
 private:
     QImage renderResult() const;
+    QPoint offsetTo(const OverlayWindow* other) const; // 本窗口局部坐标加上它就是 other 的局部坐标
+    void becomeLead();
+    void releaseLead();
+    bool forwardToLead(QMouseEvent* e); // 镜像遮罩把鼠标事件转给主遮罩
+    void paintMirror(QPainter& p);
+    bool handleWheel(const QPoint& pos, int deltaY);
     void refreshHover();
     void paintMagnifier(QPainter& p) const;
     void paintSizeLabel(QPainter& p) const;
@@ -81,6 +93,9 @@ private:
     QPixmap m_shot;      // 原始截图（逻辑坐标绘制）
     QImage m_shotImage;  // 同一份截图，供放大镜和取色按物理像素读取
     QList<DetectedWindow> m_windows;
+    QList<OverlayWindow*> m_peers;
+    OverlayWindow* m_lead = nullptr; // 非空：本遮罩是它的镜像
+    QPixmap m_composite;             // 主遮罩拼起来的多屏截图（跨屏选区的标注取样、出图用）
     mutable std::unique_ptr<ImageRegionDetector> m_imageRegions; // 按截图像素识别框，第一次悬停时才建
 
     QRect m_hover;

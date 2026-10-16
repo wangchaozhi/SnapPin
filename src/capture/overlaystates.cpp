@@ -121,7 +121,7 @@ void SelectingState::mouseMove(QMouseEvent* e)
     const int px = w->snap(pos.x(), Qt::Horizontal, right, pos);
     const int py = w->snap(pos.y(), Qt::Vertical, down, pos);
     QRect r = QRect(QPoint(ax, ay), QPoint(px, py)).normalized();
-    w->setSelection(r & w->rect());
+    w->setSelection(r & w->bounds()); // 可以拖到其他屏幕上
 }
 
 void SelectingState::mouseRelease(QMouseEvent* e)
@@ -224,7 +224,7 @@ void AdjustingState::mouseMove(QMouseEvent* e)
     QRect r = m_origin;
     if (m_drag == 9) {
         r.translate(d);
-        const QRect bounds = w->rect();
+        const QRect bounds = w->bounds();
         r.moveLeft(qBound(bounds.left(), r.left(), bounds.right() - r.width() + 1));
         r.moveTop(qBound(bounds.top(), r.top(), bounds.bottom() - r.height() + 1));
     } else {
@@ -248,7 +248,7 @@ void AdjustingState::mouseMove(QMouseEvent* e)
             t = w->snap(t, Qt::Vertical, false, pos);
         if (m_drag == 5 || m_drag == 6 || m_drag == 7)
             b = w->snap(b, Qt::Vertical, true, pos);
-        r = QRect(QPoint(l, t), QPoint(rt, b)).normalized() & w->rect();
+        r = QRect(QPoint(l, t), QPoint(rt, b)).normalized() & w->bounds();
     }
     if (r.width() >= 1 && r.height() >= 1)
         w->setSelection(r);

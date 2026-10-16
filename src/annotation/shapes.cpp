@@ -79,7 +79,7 @@ void EraserShape::paint(QPainter& p, const RenderContext& ctx) const
     stroker.setCapStyle(Qt::RoundCap);
     stroker.setJoinStyle(Qt::RoundJoin);
     p.setClipPath(stroker.createStroke(path), Qt::IntersectClip);
-    p.drawPixmap(0, 0, *ctx.source); // 截图与标注同在屏幕局部的逻辑坐标系
+    p.drawPixmap(ctx.origin, *ctx.source); // 截图与标注同在屏幕局部的逻辑坐标系
 }
 
 QRectF EraserShape::boundingRect() const
@@ -185,7 +185,8 @@ void MosaicShape::paint(QPainter& p, const RenderContext& ctx) const
     if (!ctx.source)
         return;
     const qreal dpr = ctx.source->devicePixelRatio();
-    const QRectF r = rect();
+    const QPointF o = ctx.origin;
+    const QRectF r = rect().translated(-o);
     const QRect src = QRectF(r.x() * dpr, r.y() * dpr, r.width() * dpr, r.height() * dpr).toAlignedRect()
                       & QRect(QPoint(0, 0), ctx.source->size());
     if (src.isEmpty())
@@ -200,7 +201,7 @@ void MosaicShape::paint(QPainter& p, const RenderContext& ctx) const
         m_cache = small.scaled(src.size(), Qt::IgnoreAspectRatio, Qt::FastTransformation);
         m_cacheRect = src;
     }
-    p.drawImage(QRectF(src.x() / dpr, src.y() / dpr, src.width() / dpr, src.height() / dpr), m_cache);
+    p.drawImage(QRectF(src.x() / dpr + o.x(), src.y() / dpr + o.y(), src.width() / dpr, src.height() / dpr), m_cache);
 }
 
 void PenShape::paint(QPainter& p, const RenderContext&) const
