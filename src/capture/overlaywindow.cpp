@@ -23,6 +23,7 @@ constexpr qreal kMinWidth = 1;
 constexpr qreal kMaxWidth = 30;
 constexpr int kRegionHistoryMax = 20;
 constexpr int kMinImageRegion = 8; // 从截图像素识别出的框，比这还小（逻辑像素）的不用
+constexpr int kBlockGap = 8; // 内容块之间的空白超过它（逻辑像素）才算分开的两块
 constexpr int kSnapDistance = 5; // 拖动选区边时，离窗口 / 控件边缘这么近就吸附过去（逻辑像素）
 const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
@@ -173,11 +174,13 @@ QRect OverlayWindow::windowAt(const QPoint& pos) const
     if (group < 0)
         best = rect();
 
-    // 再按截图本身的像素找边框围成的矩形：远程桌面、虚拟机里的界面没有窗口 / 控件信息也能细到按钮、输入框
-    if (!m_imageRegions)
-        m_imageRegions = std::make_unique<ImageRegionDetector>(m_shotImage);
+    // 再在它里面按截图本身的像素细分：边框围成的矩形、按空白分开的文字段落 / 图标。
+    // 远程桌面、虚拟机里的界面没有窗口 / 控件信息也能细到按钮、输入框
     const qreal dpr = m_shot.devicePixelRatio();
-    const QRect phys = m_imageRegions->regionAt((QPointF(pos) * dpr).toPoint());
+    if (!m_imageRegions)
+        m_imageRegions = std::make_unique<ImageRegionDetector>(m_shotImage, 16, qRound(kBlockGap * dpr));
+    const QRect bestPhys = QRectF(best.x() * dpr, best.y() * dpr, best.width() * dpr, best.height() * dpr).toRect();
+    const QRect phys = m_imageRegions->elementAt((QPointF(pos) * dpr).toPoint(), bestPhys);
     if (!phys.isEmpty()) {
         const QRect r = QRectF(phys.x() / dpr, phys.y() / dpr, (phys.right() + 1) / dpr - phys.x() / dpr,
                                (phys.bottom() + 1) / dpr - phys.y() / dpr).toRect() & best;

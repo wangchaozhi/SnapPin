@@ -10,11 +10,17 @@
 // 所有坐标都是图像的物理像素。
 class ImageRegionDetector {
 public:
-    explicit ImageRegionDetector(const QImage& image, int minLineLength = 16);
+    // blockGap：内容块之间至少要隔开多少像素的空白才算两块（字间距、行距比它小，会并成一块）
+    explicit ImageRegionDetector(const QImage& image, int minLineLength = 16, int blockGap = 10);
 
     // 包含 p 的、四边都由足够长的直线边缘围成的最小矩形（含边框线本身）。
     // 找不到时返回空矩形；一直扩到图像边缘的也视为没找到
     QRect regionAt(const QPoint& p) const;
+
+    // 在 bounds（通常是光标下的窗口 / 控件）里找光标下最细的元素：
+    // 先找边框围成的矩形，再在里面按空白把文字段落、图标、图片这类没有边框的内容切成块。
+    // 只有真的和旁边的内容分开了才算一块，单个按钮里的文字不会代替按钮本身。找不到时返回空矩形
+    QRect elementAt(const QPoint& p, const QRect& bounds) const;
 
 private:
     // 横向边缘：第 y 行与 y+1 行之间颜色突变；纵向边缘：第 x 列与 x+1 列之间
@@ -25,8 +31,13 @@ private:
     void vExtent(int x, int y, int& y0, int& y1) const;
     bool hLine(int x, int y) const; // 经过 (x, y) 的横向边缘线足够长
     bool vLine(int x, int y) const;
+    QRect contentBlock(const QPoint& p, const QRect& container) const;
+    // 边缘像素计数的积分图：任意矩形里有多少边缘像素 O(1) 可得
+    int edgeCount(int x0, int y0, int x1, int y1) const;
 
     int m_w = 0, m_h0 = 0;
     int m_minLen;
+    int m_gap;
     std::vector<uint8_t> m_h, m_v;
+    std::vector<uint32_t> m_sat; // (w+1)×(h+1)
 };

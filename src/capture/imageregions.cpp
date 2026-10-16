@@ -15,8 +15,8 @@ inline int colorDiff(QRgb a, QRgb b)
 
 } // namespace
 
-ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength)
-    : m_minLen(minLineLength)
+ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength, int blockGap)
+    : m_minLen(minLineLength), m_gap(blockGap)
 {
     const QImage img = image.convertToFormat(QImage::Format_RGB32);
     m_w = img.width();
@@ -37,6 +37,23 @@ ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength)
                 v[x] = 1;
         }
     }
+
+    const size_t stride = size_t(m_w) + 1;
+    m_sat.assign(stride * (size_t(m_h0) + 1), 0);
+    for (int y = 0; y < m_h0; ++y) {
+        uint32_t rowSum = 0;
+        for (int x = 0; x < m_w; ++x) {
+            rowSum += (hEdge(x, y) || vEdge(x, y)) ? 1 : 0;
+            m_sat[(size_t(y) + 1) * stride + size_t(x) + 1] = m_sat[size_t(y) * stride + size_t(x) + 1] + rowSum;
+        }
+    }
+}
+
+int ImageRegionDetector::edgeCount(int x0, int y0, int x1, int y1) const
+{
+    const size_t stride = size_t(m_w) + 1;
+    auto at = [&](int x, int y) { return m_sat[size_t(y) * stride + size_t(x)]; };
+    return int(at(x1 + 1, y1 + 1) - at(x0, y1 + 1) - at(x1 + 1, y0) + at(x0, y0));
 }
 
 void ImageRegionDetector::hExtent(int x, int y, int& x0, int& x1) const
@@ -169,4 +186,76 @@ QRect ImageRegionDetector::regionAt(const QPoint& p) const
     const int x1 = qMin(m_w - 1, right + 1);
     const int y1 = qMin(m_h0 - 1, bottom + 1);
     return QRect(QPoint(x0, y0), QPoint(x1, y1));
+}
+
+QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container) const
+{
+    // 递归 XY 切分：交替按空白行、空白列切开，每次留下光标所在的那一段，直到切不动为止
+    QRect r = container.adjusted(2, 2, -2, -2) & QRect(0, 0, m_w, m_h0); // 去掉容器自己的边框线
+    if (!r.contains(p))
+        return {};
+    bool split = false;
+    for (int round = 0; round < 16; ++round) {
+        const QRect before = r;
+        for (const bool rows : {true, false}) {
+            const int from = rows ? r.top() : r.left();
+            const int to = rows ? r.bottom() : r.right();
+            const int at = rows ? p.y() : p.x();
+            auto filled = [&](int i) {
+                return rows ? edgeCount(r.left(), i, r.right(), i) > 0 : edgeCount(i, r.top(), i, r.bottom()) > 0;
+            };
+            // 找包含 at 的内容段：段内空白不超过 m_gap
+            int segStart = -1, segEnd = -1, lastFilled = -1, start = -1;
+            for (int i = from; i <= to; ++i) {
+                if (!filled(i))
+                    continue;
+                if (lastFilled >= 0 && i - lastFilled - 1 > m_gap) {
+                    if (at <= lastFilled)
+                        break;
+                    start = -1;
+                }
+                if (start < 0)
+                    start = i;
+                lastFilled = i;
+                if (at >= start) {
+                    segStart = start;
+                    segEnd = i;
+                }
+            }
+            // 光标落在空白里：不是某个内容块
+            if (segStart < 0 || at > segEnd + 1)
+                return {};
+            // 这一段之外还有别的内容，才说明真的把它和旁边的东西分开了（只是去掉空白边距不算）
+            const int inside = rows ? edgeCount(r.left(), segStart, r.right(), segEnd)
+                                    : edgeCount(segStart, r.top(), segEnd, r.bottom());
+            if (edgeCount(r.left(), r.top(), r.right(), r.bottom()) > inside)
+                split = true;
+            if (rows)
+                r.setRect(r.x(), segStart, r.width(), segEnd - segStart + 2); // 横向边缘在 y 与 y+1 之间
+            else
+                r.setRect(segStart, r.y(), segEnd - segStart + 2, r.height());
+            r &= container;
+            if (!r.contains(p))
+                return {};
+        }
+        if (r == before)
+            break;
+    }
+    if (!split)
+        return {};
+    return r.adjusted(-2, -2, 2, 2) & container;
+}
+
+QRect ImageRegionDetector::elementAt(const QPoint& p, const QRect& bounds) const
+{
+    const QRect area = bounds & QRect(0, 0, m_w, m_h0);
+    if (m_h.empty() || !area.contains(p))
+        return {};
+    QRect container = regionAt(p) & area;
+    if (!container.contains(p))
+        container = area;
+    const QRect block = contentBlock(p, container);
+    if (!block.isEmpty())
+        return block;
+    return container == area ? QRect() : container;
 }
