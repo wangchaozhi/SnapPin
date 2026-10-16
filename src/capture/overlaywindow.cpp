@@ -8,7 +8,6 @@
 #include <QCursor>
 #include <QGuiApplication>
 #include <QKeyEvent>
-#include <QMap>
 #include <QPainter>
 #include <QScreen>
 #include <QSettings>
@@ -584,27 +583,6 @@ void OverlayWindow::mouseDoubleClickEvent(QMouseEvent* e)
 {
     m_retiredState.reset();
     m_state->mouseDoubleClick(e);
-}
-
-void OverlayWindow::addElements(const QList<DetectedWindow>& elements)
-{
-    // 插到所属顶层窗口条目的末尾，保持同一 group 连续（windowAt 依赖这一点）
-    QMap<int, QList<DetectedWindow>> byGroup;
-    for (const DetectedWindow& e : elements)
-        byGroup[e.group].append(e);
-
-    QList<DetectedWindow> merged;
-    merged.reserve(m_windows.size() + elements.size());
-    for (int i = 0; i < m_windows.size(); ++i) {
-        merged.append(m_windows[i]);
-        const int g = m_windows[i].group;
-        const bool lastOfGroup = i + 1 == m_windows.size() || m_windows[i + 1].group != g;
-        if (lastOfGroup)
-            merged.append(byGroup.take(g)); // 顶层窗口不在本屏上的结果自然被丢弃
-    }
-    m_windows = std::move(merged);
-    if (!hasSelection())
-        refreshHover();
 }
 
 void OverlayWindow::showEvent(QShowEvent*)

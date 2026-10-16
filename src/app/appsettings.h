@@ -14,7 +14,6 @@ struct AppSettings {
 
     QMap<QString, QString> hotkeys; // 动作 id -> 按键（QKeySequence 文本），空表示不设
     QString captureBackend = QStringLiteral("auto"); // auto: DXGI 优先；gdi
-    bool uiAutomation = true;
     bool historyEnabled = true;
     int historyMax = 50;
     bool autoUpdate = true; // 启动后及每天检查一次更新

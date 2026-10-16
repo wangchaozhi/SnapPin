@@ -68,19 +68,9 @@ QWidget* SettingsDialog::createGeneralPage(const QString& historyDir)
     m_backend->setCurrentIndex(qMax(0, m_backend->findData(m_settings.captureBackend)));
 #ifdef Q_OS_WIN
     captureForm->addRow(tr("截屏方式："), m_backend);
-    m_uia = new QCheckBox(tr("识别窗口内的界面元素（UI Automation）"), capture);
 #else
     m_backend->hide(); // 其他平台只有一种截屏方式
-#ifdef Q_OS_MACOS
-    m_uia = new QCheckBox(tr("识别窗口内的界面元素（需要辅助功能权限）"), capture);
-#else
-    m_uia = new QCheckBox(tr("识别窗口内的界面元素（Linux 暂不支持）"), capture);
-    m_uia->setEnabled(false);
 #endif
-#endif
-    m_uia->setChecked(m_settings.uiAutomation);
-    m_uia->setToolTip(tr("可选中按钮、输入框等控件。复杂程序的识别结果会稍晚出现"));
-    captureForm->addRow(m_uia);
 #ifdef Q_OS_WIN
     m_cursor = new QCheckBox(tr("截图时包含鼠标指针"), capture);
 #else
@@ -181,7 +171,6 @@ AppSettings SettingsDialog::settings() const
     for (auto it = m_hotkeyEdits.cbegin(); it != m_hotkeyEdits.cend(); ++it)
         s.hotkeys[it.key()] = it.value()->keySequence().toString(QKeySequence::PortableText);
     s.captureBackend = m_backend->currentData().toString();
-    s.uiAutomation = m_uia->isChecked();
     s.historyEnabled = m_history->isChecked();
     s.historyMax = m_historyMax->value();
     s.autoUpdate = m_autoUpdate->isChecked();

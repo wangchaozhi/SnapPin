@@ -158,7 +158,6 @@ void AppContext::rebuildTrayMenu()
 void AppContext::applySettings()
 {
     m_platform.capturer->setBackend(m_settings.captureBackend);
-    m_platform.windowFinder->setElementDetection(m_settings.uiAutomation);
     m_history->setEnabled(m_settings.historyEnabled);
     m_history->setMaxCount(m_settings.historyMax);
     registerHotkeys();

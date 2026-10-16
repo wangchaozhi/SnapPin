@@ -34,13 +34,7 @@ void CaptureSession::start()
     for (QScreen* s : screens)
         windows.append(m_finder->windowsOnScreen(s));
 
-    m_finder->requestElements(this, [this](QScreen* screen, const QList<DetectedWindow>& elements) {
-        for (OverlayWindow* w : std::as_const(m_overlays)) {
-            if (w->targetScreen() == screen)
-                w->addElements(elements);
-        }
-    });
-
+    // 窗口内的元素只按截图像素识别（见 ImageRegionDetector），不再查询 UI Automation / 辅助功能接口
     OverlayWindow* active = nullptr;
     for (int i = 0; i < screens.size(); ++i) {
         OverlayWindow* w = addOverlay(screens[i], shots[i], windows[i]);

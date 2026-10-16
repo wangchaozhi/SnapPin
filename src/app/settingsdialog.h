@@ -29,7 +29,6 @@ private:
     QCheckBox* m_autostart = nullptr;
     QCheckBox* m_autoUpdate = nullptr;
     QComboBox* m_backend = nullptr;
-    QCheckBox* m_uia = nullptr;
     QCheckBox* m_history = nullptr;
     QSpinBox* m_historyMax = nullptr;
     QCheckBox* m_cursor = nullptr;

@@ -35,7 +35,6 @@ public:
     void setSelection(const QRect& r);
     void clearSelection();
     void presetSelection(const QRect& r); // 直接进入调整状态（编辑贴图时使用）
-    void addElements(const QList<DetectedWindow>& elements); // 异步到达的控件级识别结果
     QScreen* targetScreen() const { return m_screen; }
     void setToolbarVisible(bool visible);
     ToolType toolType() const { return m_toolType; }
