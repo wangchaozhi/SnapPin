@@ -18,6 +18,7 @@ class PinWindow;
 class QMenu;
 class QSystemTrayIcon;
 class QTimer;
+class TextRecognizer;
 class Updater;
 
 // 应用上下文：持有平台实现与各管理器，代替全局单例
@@ -40,8 +41,10 @@ private:
     void openHistory();
 
     // editTarget 非空表示编辑该贴图：选择“贴图”时替换它的内容
-    CaptureSession* newSession(PinWindow* editTarget = nullptr);
-    void startCapture();
+    // ocr 为 true 时（“截图识字”），复制操作（回车、双击、Ctrl+C）改为识别文字
+    CaptureSession* newSession(PinWindow* editTarget = nullptr, bool ocr = false);
+    void startCapture(bool ocr = false);
+    void recognizeText(const QImage& image);
     void editPin(PinWindow* pin);
     void handleCaptureResult(const QImage& image, const QRect& globalRect, FinishAction action, PinWindow* editTarget);
     void startLongCapture(const QRect& globalRect);
@@ -52,6 +55,7 @@ private:
     AppSettings m_settings;
     PinManager* m_pins;
     HistoryStore* m_history;
+    TextRecognizer* m_ocr;
     Updater* m_updater;
     QTimer* m_updateTimer;
     QSystemTrayIcon* m_tray = nullptr;

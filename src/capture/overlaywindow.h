@@ -15,7 +15,7 @@ class EditorToolbar;
 class ImageRegionDetector;
 class OverlayState;
 
-enum class FinishAction { Copy, Save, QuickSave, Pin, LongCapture };
+enum class FinishAction { Copy, Save, QuickSave, Pin, LongCapture, Ocr };
 
 // 单块屏幕上的截图遮罩。交互逻辑委托给 OverlayState（状态模式）。
 // 多屏时开始框选的那块屏幕的遮罩是“主遮罩”，持有选区和标注，坐标可以超出本屏延伸到其他屏幕；

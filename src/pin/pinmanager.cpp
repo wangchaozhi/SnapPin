@@ -24,6 +24,7 @@ PinWindow* PinManager::create(const QImage& image)
     auto* w = new PinWindow(image);
     connect(w, &PinWindow::closeAllRequested, this, &PinManager::closeAll);
     connect(w, &PinWindow::editRequested, this, [this, w] { emit editRequested(w); });
+    connect(w, &PinWindow::ocrRequested, this, [this, w] { emit ocrRequested(w->image()); });
     connect(w, &PinWindow::clickThroughChanged, this, [this](bool on) {
         if (on)
             emit clickThroughEnabled();

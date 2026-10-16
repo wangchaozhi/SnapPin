@@ -56,6 +56,8 @@ set(CORE_SOURCES
     src/capture/imageregions.h src/capture/imageregions.cpp
     src/capture/scrollcapture.h src/capture/scrollcapture.cpp
     src/pin/pinwindow.h src/pin/pinwindow.cpp
+    src/ocr/ocrwindow.h src/ocr/ocrwindow.cpp
+    src/ocr/textrecognizer.h src/ocr/textrecognizer.cpp
     src/pin/pinmanager.h src/pin/pinmanager.cpp
     src/update/updater.h src/update/updater.cpp
 )
@@ -104,14 +106,91 @@ elseif(APPLE)
     set_source_files_properties(resources/icons/snappin.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
+# 文字识别：PP-OCRv5（mobile）模型 + ONNX Runtime（CPU），配置时下载并校验 SHA256，放在构建目录的 _deps 里。
+# 1.23.2 是最后一个提供 macOS 通用二进制（arm64 + x86_64）的版本
+set(SNAPPIN_ORT_VERSION 1.23.2)
+if(WIN32)
+    set(_ort_pkg onnxruntime-win-x64-${SNAPPIN_ORT_VERSION})
+    set(_ort_archive ${_ort_pkg}.zip)
+    set(_ort_sha256 0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd)
+elseif(APPLE)
+    set(_ort_pkg onnxruntime-osx-universal2-${SNAPPIN_ORT_VERSION})
+    set(_ort_archive ${_ort_pkg}.tgz)
+    set(_ort_sha256 49ae8e3a66ccb18d98ad3fe7f5906b6d7887df8a5edd40f49eb2b14e20885809)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(_ort_pkg onnxruntime-linux-aarch64-${SNAPPIN_ORT_VERSION})
+    set(_ort_archive ${_ort_pkg}.tgz)
+    set(_ort_sha256 7c63c73560ed76b1fac6cff8204ffe34fe180e70d6582b5332ec094810241e5c)
+else()
+    set(_ort_pkg onnxruntime-linux-x64-${SNAPPIN_ORT_VERSION})
+    set(_ort_archive ${_ort_pkg}.tgz)
+    set(_ort_sha256 1fa4dcaef22f6f7d5cd81b28c2800414350c10116f5fdd46a2160082551c5f9b)
+endif()
+set(_deps ${CMAKE_BINARY_DIR}/_deps)
+
+# 文件已存在且校验一致时不重新下载
+function(snappin_download url file sha256)
+    file(DOWNLOAD ${url} ${file} EXPECTED_HASH SHA256=${sha256} STATUS status)
+    list(GET status 0 code)
+    if(NOT code EQUAL 0)
+        message(FATAL_ERROR "Download failed: ${url}\n${status}")
+    endif()
+endfunction()
+
+snappin_download(https://github.com/microsoft/onnxruntime/releases/download/v${SNAPPIN_ORT_VERSION}/${_ort_archive}
+                 ${_deps}/${_ort_archive} ${_ort_sha256})
+set(ORT_ROOT ${_deps}/${_ort_pkg})
+if(NOT EXISTS ${ORT_ROOT}/include/onnxruntime_cxx_api.h)
+    file(ARCHIVE_EXTRACT INPUT ${_deps}/${_ort_archive} DESTINATION ${_deps})
+endif()
+add_library(onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${ORT_ROOT}/include)
+if(WIN32)
+    set(ORT_RUNTIME ${ORT_ROOT}/lib/onnxruntime.dll)
+    set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION ${ORT_RUNTIME} IMPORTED_IMPLIB ${ORT_ROOT}/lib/onnxruntime.lib)
+elseif(APPLE)
+    set(ORT_RUNTIME ${ORT_ROOT}/lib/libonnxruntime.${SNAPPIN_ORT_VERSION}.dylib)
+    set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION ${ORT_RUNTIME})
+else()
+    set(ORT_RUNTIME ${ORT_ROOT}/lib/libonnxruntime.so.1) # 与库的 SONAME 同名
+    set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION ${ORT_RUNTIME} IMPORTED_SONAME libonnxruntime.so.1)
+endif()
+
+# 模型来自 RapidOCR 转换好的 ONNX 版本（与 PaddleOCR 官方 PP-OCRv5 mobile 权重相同），字典在识别模型的元数据里
+set(_ocr_url https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5)
+snappin_download(${_ocr_url}/det/ch_PP-OCRv5_det_mobile.onnx ${_deps}/ocr/det.onnx
+                 4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae)
+snappin_download(${_ocr_url}/rec/ch_PP-OCRv5_rec_mobile.onnx ${_deps}/ocr/rec.onnx
+                 5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5)
+
+# OCR 引擎（程序和测试共用）；模型编进资源 :/ocr/，三个平台的打包都不用额外处理模型文件
+add_library(snappin_ocr STATIC src/ocr/ocrtext.h src/ocr/ocrtext.cpp src/ocr/ppocr.h src/ocr/ppocr.cpp)
+target_include_directories(snappin_ocr PUBLIC src)
+target_link_libraries(snappin_ocr PUBLIC Qt6::Gui onnxruntime)
+function(snappin_add_ocr_models target)
+    qt_add_resources(${target} ${target}_ocr_models PREFIX /ocr BASE ${_deps}/ocr BIG_RESOURCES OPTIONS -no-compress
+                     FILES ${_deps}/ocr/det.onnx ${_deps}/ocr/rec.onnx)
+endfunction()
+
+# 把 ONNX Runtime 放到程序旁边：Windows 与 exe 同目录（优先于系统自带的旧版 onnxruntime.dll），macOS 放进 .app 的 Frameworks
+function(snappin_deploy_ort target)
+    if(WIN32)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ORT_RUNTIME} $<TARGET_FILE_DIR:${target}>
+            VERBATIM)
+    endif()
+endfunction()
+
 qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES} ${APP_ICON_SOURCES})
+snappin_add_ocr_models(SnapPin)
+snappin_deploy_ort(SnapPin)
 
 target_include_directories(SnapPin PRIVATE src)
 target_compile_definitions(SnapPin PRIVATE
     APP_VERSION="${PROJECT_VERSION}"
     SNAPPIN_GITHUB_REPO="${SNAPPIN_GITHUB_REPO}"
 )
-target_link_libraries(SnapPin PRIVATE Qt6::Widgets Qt6::Network)
+target_link_libraries(SnapPin PRIVATE Qt6::Widgets Qt6::Network snappin_ocr)
 
 option(SNAPPIN_BUILD_TESTS "Build unit tests" ON)
 if(SNAPPIN_BUILD_TESTS)
@@ -124,6 +203,15 @@ if(SNAPPIN_BUILD_TESTS)
     target_include_directories(imageregions_test PRIVATE src)
     target_link_libraries(imageregions_test PRIVATE Qt6::Gui)
     add_test(NAME imageregions COMMAND imageregions_test)
+    qt_add_executable(ocrtext_test tests/ocrtext_test.cpp src/ocr/ocrtext.cpp)
+    target_include_directories(ocrtext_test PRIVATE src)
+    target_link_libraries(ocrtext_test PRIVATE Qt6::Gui)
+    add_test(NAME ocrtext COMMAND ocrtext_test)
+    qt_add_executable(ppocr_test tests/ppocr_test.cpp)
+    target_link_libraries(ppocr_test PRIVATE snappin_ocr)
+    snappin_add_ocr_models(ppocr_test)
+    snappin_deploy_ort(ppocr_test)
+    add_test(NAME ppocr COMMAND ppocr_test)
 endif()
 
 if(WIN32)
@@ -141,12 +229,19 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     )
     target_compile_options(SnapPin PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    # ONNX Runtime 放进 .app/Contents/Frameworks（必须在下面的签名之前）
+    set_target_properties(SnapPin PROPERTIES BUILD_RPATH "@executable_path/../Frameworks"
+                                             INSTALL_RPATH "@executable_path/../Frameworks")
+    add_custom_command(TARGET SnapPin POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:SnapPin>/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ORT_RUNTIME} "$<TARGET_BUNDLE_CONTENT_DIR:SnapPin>/Frameworks/"
+        VERBATIM)
     # 系统权限（屏幕录制、辅助功能）跟签名绑定。默认的 ad-hoc 签名每次编译都会变，权限随之失效；
     # 本机开发时指定一个固定的签名身份（与发布版相同的自签名证书 "SnapPin Release"，开发版和安装版共用一条系统授权），授权一次即可长期有效
     set(SNAPPIN_CODESIGN_IDENTITY "" CACHE STRING "Code signing identity for local builds (keeps macOS permissions across rebuilds)")
     if(SNAPPIN_CODESIGN_IDENTITY)
         add_custom_command(TARGET SnapPin POST_BUILD
-            COMMAND codesign --force --sign "${SNAPPIN_CODESIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:SnapPin>"
+            COMMAND codesign --force --deep --sign "${SNAPPIN_CODESIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:SnapPin>"
             VERBATIM)
     endif()
     target_link_libraries(SnapPin PRIVATE
@@ -158,6 +253,10 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(SnapPin PRIVATE Qt6::DBus PkgConfig::XCB)
     install(TARGETS SnapPin RUNTIME DESTINATION bin)
+    # AppImage：linuxdeploy 按 RPATH 找到 lib/ 下的 ONNX Runtime 并打包进去
+    set_target_properties(SnapPin PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+    file(REAL_PATH ${ORT_RUNTIME} _ort_real) # libonnxruntime.so.1 是符号链接，安装它指向的文件
+    install(FILES ${_ort_real} DESTINATION lib RENAME libonnxruntime.so.1)
     install(FILES resources/linux/snappin.desktop DESTINATION share/applications)
     install(FILES resources/linux/snappin.svg DESTINATION share/icons/hicolor/scalable/apps)
     foreach(size 256 512)

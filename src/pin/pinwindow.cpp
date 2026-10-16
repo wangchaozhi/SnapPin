@@ -300,6 +300,8 @@ void PinWindow::keyPressEvent(QKeyEvent* e)
         flip(false);
     else if (e->key() == Qt::Key_Space)
         emit editRequested();
+    else if (e->key() == Qt::Key_R && !ctrl)
+        emit ocrRequested();
     else
         QWidget::keyPressEvent(e);
 }
@@ -308,6 +310,7 @@ void PinWindow::contextMenuEvent(QContextMenuEvent* e)
 {
     QMenu menu(this);
     menu.addAction(tr("编辑标注\t空格"), this, &PinWindow::editRequested);
+    menu.addAction(tr("识别文字\tR"), this, &PinWindow::ocrRequested);
     menu.addSeparator();
     menu.addAction(tr("复制\tCtrl+C"), this, &PinWindow::copyToClipboard);
     menu.addAction(tr("另存为...\tCtrl+S"), this, &PinWindow::save);

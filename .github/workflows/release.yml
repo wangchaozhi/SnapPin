@@ -47,6 +47,8 @@ jobs:
           $dir = 'dist/SnapPin'
           New-Item -ItemType Directory $dir | Out-Null
           Copy-Item build/Release/SnapPin.exe $dir
+          # 文字识别用的 ONNX Runtime（构建时已复制到 exe 旁边）
+          Copy-Item build/Release/onnxruntime.dll $dir
           windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime "$dir/SnapPin.exe"
           # 直接附带 VC++ 运行库，免去用户安装 vc_redist
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath

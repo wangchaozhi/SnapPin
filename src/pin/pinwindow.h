@@ -38,6 +38,7 @@ public:
 signals:
     void closeAllRequested();
     void editRequested();
+    void ocrRequested();
     void closing(const PinSnapshot& state);
     void clickThroughChanged(bool on);
 

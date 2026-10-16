@@ -6,6 +6,7 @@ const QList<AppSettings::HotkeyDefault>& AppSettings::hotkeyDefaults()
 {
     static const QList<HotkeyDefault> defaults = {
         {QStringLiteral("capture"), QStringLiteral("F1")},
+        {QStringLiteral("ocr_capture"), QString()},
         {QStringLiteral("pin_clipboard"), QStringLiteral("F3")},
         {QStringLiteral("toggle_pins"), QStringLiteral("Shift+F3")},
         {QStringLiteral("toggle_click_through"), QStringLiteral("Ctrl+F3")},

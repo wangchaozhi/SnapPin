@@ -251,6 +251,18 @@ Drawer drawerFor(ToolIcon id)
             p.drawPath(polyline({{8.0, 11.7}, {10.0, 13.7}, {12.0, 11.7}}));
         };
 
+    case ToolIcon::Ocr:
+        return [](QPainter& p, const Ink&) {
+            // 取景框的四个角 + 中间几行字
+            p.drawPath(polyline({{3.5, 7.0}, {3.5, 3.5}, {7.0, 3.5}}));
+            p.drawPath(polyline({{13.0, 3.5}, {16.5, 3.5}, {16.5, 7.0}}));
+            p.drawPath(polyline({{3.5, 13.0}, {3.5, 16.5}, {7.0, 16.5}}));
+            p.drawPath(polyline({{13.0, 16.5}, {16.5, 16.5}, {16.5, 13.0}}));
+            p.drawLine(QPointF(7.0, 7.5), QPointF(13.0, 7.5));
+            p.drawLine(QPointF(7.0, 10.0), QPointF(13.0, 10.0));
+            p.drawLine(QPointF(7.0, 12.5), QPointF(10.5, 12.5));
+        };
+
     case ToolIcon::Pin:
         return [](QPainter& p, const Ink& ink) {
             // 图钉：帽 + 收腰的钉身 + 针
@@ -308,6 +320,7 @@ Hue hueFor(ToolIcon id)
     case ToolIcon::Save:
         return kCyan;
     case ToolIcon::Marker:
+    case ToolIcon::Ocr:
         return kBlue;
     case ToolIcon::Mosaic:
         return kLavender;

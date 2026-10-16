@@ -27,6 +27,7 @@ signals:
     void longCaptureRequested();
     void saveRequested();
     void copyRequested();
+    void ocrRequested();
 
 protected:
     void hideEvent(QHideEvent* e) override;

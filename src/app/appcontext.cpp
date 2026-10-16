@@ -6,6 +6,8 @@
 #include "history/historystore.h"
 #include "history/historywindow.h"
 #include "imageutil.h"
+#include "ocr/ocrwindow.h"
+#include "ocr/textrecognizer.h"
 #include "pin/pinmanager.h"
 #include "pin/pinwindow.h"
 #include "settingsdialog.h"
@@ -37,10 +39,12 @@ AppContext::AppContext(QObject* parent)
     , m_settings(AppSettings::load())
     , m_pins(new PinManager(this))
     , m_history(new HistoryStore(this))
+    , m_ocr(new TextRecognizer(this))
     , m_updater(new Updater(this))
     , m_updateTimer(new QTimer(this))
 {
     connect(m_pins, &PinManager::editRequested, this, &AppContext::editPin);
+    connect(m_pins, &PinManager::ocrRequested, this, &AppContext::recognizeText);
     // 贴图穿透后收不到鼠标，提示怎么恢复
     connect(m_pins, &PinManager::clickThroughEnabled, this, [this] {
         const QString keys = m_settings.hotkeys.value(QStringLiteral("toggle_click_through"));
@@ -76,6 +80,7 @@ void AppContext::start()
 void AppContext::setupActions()
 {
     m_actions.add(QStringLiteral("capture"), tr("截图"), [this] { startCapture(); });
+    m_actions.add(QStringLiteral("ocr_capture"), tr("截图识字"), [this] { startCapture(true); });
     m_actions.add(QStringLiteral("pin_clipboard"), tr("贴图（剪贴板）"), [this] {
         if (!m_pins->pinClipboard() && m_tray)
             m_tray->showMessage(tr("SnapPin"), tr("剪贴板中没有图片或文字"), QSystemTrayIcon::Information, 2000);
@@ -137,7 +142,7 @@ void AppContext::setupTray()
 
 void AppContext::rebuildTrayMenu()
 {
-    static const char* const kMenu[] = {"capture", "pin_clipboard", nullptr,
+    static const char* const kMenu[] = {"capture", "ocr_capture", "pin_clipboard", nullptr,
                                         "history", "toggle_pins", "close_pins", "restore_pin", "toggle_click_through", nullptr,
                                         "settings", "check_update", "quit"};
     m_trayMenu->clear();
@@ -235,12 +240,14 @@ void AppContext::openHistory()
     m_historyWindow->activateWindow();
 }
 
-CaptureSession* AppContext::newSession(PinWindow* editTarget)
+CaptureSession* AppContext::newSession(PinWindow* editTarget, bool ocr)
 {
     m_session = new CaptureSession(m_platform.capturer.get(), m_platform.windowFinder.get(), this);
     QPointer<PinWindow> target(editTarget);
     connect(m_session, &CaptureSession::finished, this,
-            [this, target](const QImage& image, const QRect& rect, FinishAction action) {
+            [this, target, ocr](const QImage& image, const QRect& rect, FinishAction action) {
+                if (ocr && action == FinishAction::Copy)
+                    action = FinishAction::Ocr;
                 // 延后到遮罩销毁后再处理，避免保存对话框在遮罩事件处理中弹出
                 QTimer::singleShot(0, this, [this, image, rect, action, target] {
                     handleCaptureResult(image, rect, action, target);
@@ -254,11 +261,11 @@ CaptureSession* AppContext::newSession(PinWindow* editTarget)
     return m_session;
 }
 
-void AppContext::startCapture()
+void AppContext::startCapture(bool ocr)
 {
     if (m_session || m_scrollSession || m_settingsOpen) // 已在截图中，或正在设置快捷键
         return;
-    CaptureSession* session = newSession();
+    CaptureSession* session = newSession(nullptr, ocr);
     session->setIncludeCursor(m_settings.captureCursor);
     session->start();
 }
@@ -292,6 +299,9 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
     case FinishAction::Copy:
         QGuiApplication::clipboard()->setImage(image);
         break;
+    case FinishAction::Ocr:
+        recognizeText(image);
+        break;
     case FinishAction::Save:
         saveImageInteractive(image);
         break;
@@ -316,6 +326,15 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
         }
         break;
     }
+}
+
+void AppContext::recognizeText(const QImage& image)
+{
+    auto* window = new OcrWindow;
+    window->show();
+    window->raise();
+    window->activateWindow();
+    m_ocr->recognize(image, window, [window](const OcrResult& r) { window->setResult(r); });
 }
 
 void AppContext::startLongCapture(const QRect& globalRect)
