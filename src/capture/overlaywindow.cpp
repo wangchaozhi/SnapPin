@@ -23,7 +23,7 @@ constexpr qreal kMaxWidth = 30;
 constexpr int kRegionHistoryMax = 20;
 constexpr int kMinImageRegion = 8; // 从截图像素识别出的框，比这还小（逻辑像素）的不用
 constexpr int kBlockGap = 8; // 内容块之间的空白超过它（逻辑像素）才算分开的两块
-constexpr int kHoverSettleMs = 120; // 光标还在当前框里时，新识别到的框要稳定这么久才切换
+constexpr int kHoverSettleMs = 150; // 光标还在当前框里时，新识别到的框要稳定这么久才切换
 constexpr int kSnapDistance = 5; // 拖动选区边时，离窗口 / 控件边缘这么近就吸附过去（逻辑像素）
 const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
