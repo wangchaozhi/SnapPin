@@ -111,10 +111,21 @@ void AppContext::setupTray()
     m_tray = new QSystemTrayIcon(makeAppIcon(m_settings.iconPalette), this);
     m_tray->setContextMenu(m_trayMenu.get());
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
+#ifdef Q_OS_WIN
+        // Windows 沿用 Snipaste 的习惯：左键截图、中键贴剪贴板、右键菜单
         if (r == QSystemTrayIcon::Trigger)
             m_actions.trigger(QStringLiteral("capture"));
         else if (r == QSystemTrayIcon::MiddleClick)
             m_actions.trigger(QStringLiteral("pin_clipboard"));
+#else
+        // macOS / Linux 按平台惯例：单击托盘图标只弹出菜单，截图用快捷键或菜单第一项。
+        // macOS 上 Qt 自己会在左右键单击时弹出菜单；Linux 左键只上报 Trigger，要手动弹出
+#ifndef Q_OS_MACOS
+        if (r == QSystemTrayIcon::Trigger)
+            m_trayMenu->popup(QCursor::pos());
+#endif
+        Q_UNUSED(r)
+#endif
     });
     connect(m_tray, &QSystemTrayIcon::messageClicked, this, [this] {
         if (!m_quickSavedFolder.isEmpty())
