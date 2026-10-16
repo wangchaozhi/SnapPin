@@ -9,8 +9,9 @@ constexpr int kGap = 2;            // 边缘线允许的断点
 constexpr int kMaxExpand = 24;     // 某条边不闭合时向外找下一条线的次数上限
 constexpr int kLongLine = 64;      // 这么长的直边缘算长线（输入框、色块的边）
 constexpr int kHugeLine = 256;     // 这么长的算结构线（窗口边框、贯穿的分界线）
-constexpr int kMaxPillHeight = 96;
-constexpr int kMinPillLine = 48;   // 胶囊上下边至少这么长 // 胶囊形（两端是半圆，没有竖边）的输入框、按钮最高多少
+constexpr int kMaxPillHeight = 96; // 胶囊形（两端是半圆，没有竖边）的输入框、按钮最高多少
+constexpr int kMinPillLine = 48;   // 胶囊上下边至少这么长
+constexpr int kBgSamples = 15;     // 判断一行 / 一列的底色时取多少个采样点
 
 inline int colorDiff(QRgb a, QRgb b)
 {
@@ -22,7 +23,8 @@ inline int colorDiff(QRgb a, QRgb b)
 ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength, int blockGap)
     : m_minLen(minLineLength), m_gap(blockGap)
 {
-    const QImage img = image.convertToFormat(QImage::Format_RGB32);
+    m_img = image.convertToFormat(QImage::Format_RGB32);
+    const QImage& img = m_img;
     m_w = img.width();
     m_h0 = img.height();
     if (m_w < 2 || m_h0 < 2)
@@ -318,19 +320,96 @@ QRect ImageRegionDetector::pillAt(const QPoint& p) const
     return r.contains(p) && r.width() >= m_minLen ? r : QRect();
 }
 
+bool ImageRegionDetector::background(bool row, int i, const QRect& r, QRgb& color) const
+{
+    // 在这一行（列）上均匀取几个点，出现最多的颜色就是底色；文字只占少数点，不影响。
+    // 最多的颜色也不到六成时（比如穿过一排图标的那几列）算“混杂”，没有明确的底色
+    const int lo = row ? r.left() : r.top();
+    const int hi = row ? r.right() : r.bottom();
+    QRgb samples[kBgSamples];
+    for (int k = 0; k < kBgSamples; ++k) {
+        const int j = lo + int((qint64(hi - lo) * (2 * k + 1)) / (2 * kBgSamples));
+        samples[k] = row ? m_img.pixel(j, i) : m_img.pixel(i, j);
+    }
+    int best = 0, bestVotes = 0;
+    for (int k = 0; k < kBgSamples; ++k) {
+        int votes = 0;
+        for (const QRgb s : samples)
+            votes += colorDiff(samples[k], s) <= kEdgeThreshold ? 1 : 0;
+        if (votes > bestVotes) {
+            bestVotes = votes;
+            best = k;
+        }
+    }
+    color = samples[best];
+    return bestVotes * 10 >= kBgSamples * 6;
+}
+
+void ImageRegionDetector::backgroundRun(bool rows, const QRect& r, int at, int& start, int& end) const
+{
+    // 从光标所在行（列）向两边扩，和上一行（列）底色相近就连成一段：渐变的壁纸、背景不会被切开，
+    // 只有底色突然变了（标签和标签栏、任务栏和壁纸）才断。夹在中间的分界线、零星的杂色（短于最短边线）不打断，
+    // 底色混杂的行（列）也不打断
+    const int from = rows ? r.top() : r.left();
+    const int to = rows ? r.bottom() : r.right();
+    start = from;
+    end = to;
+    QRgb ref;
+    if (!background(rows, at, r, ref))
+        return; // 光标所在处就没有明确的底色：不按底色切
+    start = end = at;
+    for (const int dir : {-1, 1}) {
+        QRgb prev = ref;
+        for (int i = at + dir, miss = 0; i >= from && i <= to && miss < m_minLen; i += dir) {
+            QRgb bg;
+            const bool clear = background(rows, i, r, bg);
+            // 混杂的行（列）只在紧挨着这一段时并进来；已经断开了的话不能靠它们又连上
+            if (clear ? colorDiff(bg, prev) <= kEdgeThreshold : miss == 0) {
+                (dir < 0 ? start : end) = i;
+                if (clear)
+                    prev = bg;
+                miss = 0;
+            } else {
+                ++miss;
+            }
+        }
+    }
+}
+
 QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container) const
 {
-    // 递归 XY 切分：交替按空白行、空白列切开，每次留下光标所在的那一段，直到切不动为止
+    // 递归 XY 切分：交替按行、按列切，每次留下光标所在的那一段，直到切不动为止。两种切法：
+    // 1. 底色变了：标签栏里白色的当前标签、桌面上的任务栏、侧边栏……底色不同的一段自成一个区域
+    // 2. 空白：区域里按足够宽的空白把文字段落、图标切成内容块
+    // 光标在某个区域的空白处时返回这个区域；在内容上时返回内容块
     QRect r = container.adjusted(2, 2, -2, -2) & QRect(0, 0, m_w, m_h0); // 去掉容器自己的边框线
     if (!r.contains(p))
         return {};
+    QRect region;      // 最近一次按底色切出来的区域
+    QRect area = r;    // 底色区域的范围：判断底色时在整个区域的宽（高）上取样，不受内容裁剪影响（否则按钮上的黑字会被当成底色）
     bool split = false;
     for (int round = 0; round < 16; ++round) {
         const QRect before = r;
         for (const bool rows : {true, false}) {
+            const int at = rows ? p.y() : p.x();
+
+            int runStart, runEnd;
+            backgroundRun(rows, area, at, runStart, runEnd);
+            const int from0 = rows ? area.top() : area.left();
+            const int to0 = rows ? area.bottom() : area.right();
+            // 切掉的部分至少有最短边线那么宽才算，边框内侧一两行抗锯齿的颜色不算换了底色
+            if ((runStart - from0 >= m_minLen || to0 - runEnd >= m_minLen) && runEnd - runStart + 1 >= m_minLen) {
+                if (rows)
+                    area.setRect(area.x(), runStart, area.width(), runEnd - runStart + 1);
+                else
+                    area.setRect(runStart, area.y(), runEnd - runStart + 1, area.height());
+                r &= area;
+                region = area;
+                split = true;
+            }
+
             const int from = rows ? r.top() : r.left();
             const int to = rows ? r.bottom() : r.right();
-            const int at = rows ? p.y() : p.x();
             auto filled = [&](int i) {
                 return rows ? rowHasContent(i, r.left(), r.right()) : colHasContent(i, r.top(), r.bottom());
             };
@@ -352,9 +431,9 @@ QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container)
                     segEnd = i;
                 }
             }
-            // 光标落在空白里：不是某个内容块
+            // 光标落在空白里：是底色区域本身（有的话），不是某个内容块
             if (segStart < 0 || at > segEnd + 1)
-                return {};
+                return region.isEmpty() ? QRect() : (region & container);
             // 这一段之外还有别的内容，才说明真的把它和旁边的东西分开了（只是去掉空白边距不算）
             for (int i = from; i <= to && !split; ++i)
                 if ((i < segStart || i > segEnd) && filled(i))

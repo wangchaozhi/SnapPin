@@ -1,6 +1,7 @@
 #include "capture/imageregions.h"
 
 #include <QGuiApplication>
+#include <QLinearGradient>
 #include <QPainter>
 #include <cstdio>
 
@@ -14,6 +15,17 @@ static void expect(const char* name, const QRect& got, const QRect& want)
         ++failures;
     } else {
         std::printf("ok   %s\n", name);
+    }
+}
+
+// 结果只要求大致对（比如允许边框差一两个像素）时用
+static void check(const char* name, bool ok, const QRect& got)
+{
+    if (ok) {
+        std::printf("ok   %s\n", name);
+    } else {
+        std::printf("FAIL %s: got (%d,%d %dx%d)\n", name, got.x(), got.y(), got.width(), got.height());
+        ++failures;
     }
 }
 
@@ -85,5 +97,42 @@ int main(int argc, char** argv)
         ++failures;
     }
     expect("toolbar icon", f.elementAt({610, 80}, bar.rect()), QRect(QPoint(599, 69), QPoint(620, 90)));
+
+    // 标签栏：浅蓝底上一个白色的当前标签，下边和白色工具栏连在一起（没有边线）；标签里有图标、标题、关闭按钮
+    QImage tabs(800, 120, QImage::Format_RGB32);
+    tabs.fill(Qt::white);
+    QPainter t(&tabs);
+    t.fillRect(0, 0, 800, 50, QColor(0xD3, 0xE3, 0xFD));
+    t.fillRect(50, 6, 290, 44, Qt::white);                  // 当前标签 50..339 x 6..49
+    t.fillRect(62, 20, 16, 16, QColor(0x5F, 0x63, 0x68));    // 图标
+    t.fillRect(86, 23, 60, 10, Qt::black);                   // 标题
+    t.fillRect(316, 22, 12, 12, QColor(0x5F, 0x63, 0x68));   // 关闭按钮
+    t.fillRect(400, 23, 60, 10, Qt::black);                  // 另一个（未选中）标签的标题
+    t.end();
+    ImageRegionDetector g(tabs);
+    const QRect tab = g.elementAt({200, 28}, tabs.rect());
+    check("tab", qAbs(tab.left() - 50) <= 2 && qAbs(tab.right() - 339) <= 2 && tab.top() <= 8 && tab.bottom() >= 44
+                     && tab.bottom() <= 52, tab);
+    const QRect title = g.elementAt({100, 28}, tabs.rect());
+    check("tab title", title.contains(QRect(86, 23, 60, 10)) && title.right() < 300, title);
+
+    // 桌面：上下渐变的壁纸，底部深色任务栏，里面一排图标
+    QImage desk(1000, 600, QImage::Format_RGB32);
+    QPainter k(&desk);
+    QLinearGradient grad(0, 0, 0, 552);
+    grad.setColorAt(0, QColor(40, 90, 160));
+    grad.setColorAt(1, QColor(120, 170, 220));
+    k.fillRect(0, 0, 1000, 552, grad);
+    k.fillRect(0, 552, 1000, 48, QColor(32, 32, 32));        // 任务栏 0..999 x 552..599
+    for (const int x : {400, 450, 500, 550})
+        k.fillRect(x, 564, 24, 24, QColor(0xE8, 0xA0, 0x30)); // 任务栏图标
+    k.end();
+    ImageRegionDetector w(desk);
+    const QRect bar0 = w.elementAt({200, 575}, desk.rect());
+    check("taskbar", bar0.top() >= 548 && bar0.top() <= 553 && bar0.bottom() >= 598 && bar0.width() >= 990, bar0);
+    expect("taskbar icon", w.elementAt({460, 575}, desk.rect()), QRect(QPoint(449, 563), QPoint(474, 588)));
+    // 渐变壁纸不会被切成一条条，空白处框的是任务栏以上的整块桌面
+    const QRect wall = w.elementAt({500, 300}, desk.rect());
+    check("wallpaper not cut into bands", wall.top() <= 2 && wall.bottom() >= 548 && wall.bottom() <= 553 && wall.width() >= 990, wall);
     return failures ? 1 : 0;
 }

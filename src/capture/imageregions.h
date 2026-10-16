@@ -32,11 +32,16 @@ private:
     bool hLine(int x, int y) const; // 经过 (x, y) 的横向边缘线足够长
     bool vLine(int x, int y) const;
     QRect pillAt(const QPoint& p) const;
+    // 第 i 行（row）/ 列在 r 范围里的底色；没有明确底色（几种颜色混杂）时返回 false
+    bool background(bool row, int i, const QRect& r, QRgb& color) const;
+    // 包含 at 的、底色相同的连续行（rows）/ 列
+    void backgroundRun(bool rows, const QRect& r, int at, int& start, int& end) const;
     QRect contentBlock(const QPoint& p, const QRect& container) const;
     // 第 y 行的 [x0, x1] / 第 x 列的 [y0, y1] 里有没有内容（见构造函数里的说明）
     bool rowHasContent(int y, int x0, int x1) const;
     bool colHasContent(int x, int y0, int y1) const;
 
+    QImage m_img; // RGB32
     int m_w = 0, m_h0 = 0;
     int m_minLen;
     int m_gap;
