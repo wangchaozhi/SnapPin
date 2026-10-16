@@ -25,8 +25,11 @@ void CaptureSession::start()
 
     // 先截图、先识别窗口，再显示任何遮罩，避免把遮罩自己截进去
     QList<QPixmap> shots;
-    for (QScreen* s : screens)
+    for (QScreen* s : screens) {
         shots.append(m_capturer->grab(s));
+        if (m_includeCursor)
+            m_capturer->paintCursor(shots.last(), s);
+    }
     QList<QList<DetectedWindow>> windows;
     for (QScreen* s : screens)
         windows.append(m_finder->windowsOnScreen(s));

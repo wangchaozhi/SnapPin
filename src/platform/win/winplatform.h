@@ -31,6 +31,7 @@ class WinScreenCapturer : public IScreenCapturer {
 public:
     QPixmap grab(QScreen* screen) override;
     void setBackend(const QString& backend) override { m_backend = backend; }
+    void paintCursor(QPixmap& shot, QScreen* screen) override;
 
 private:
     QString m_backend = QStringLiteral("auto");

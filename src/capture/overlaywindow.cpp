@@ -24,6 +24,41 @@ const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
 bool g_colorHex = false; // 放大镜颜色显示 / 复制格式：HEX 或 RGB，本次运行内记住
 
+// 每个工具各自记住上次用的颜色 / 粗细 / 填充（重启后仍有效），互不影响
+Style defaultToolStyle(ToolType t)
+{
+    Style s;
+    if (t == ToolType::Marker)
+        s.color = QColor(0xFFCC00); // 荧光笔默认黄色
+    return s;
+}
+
+QString toolStyleKey(ToolType t)
+{
+    return QStringLiteral("annotate/style%1").arg(int(t));
+}
+
+Style loadToolStyle(ToolType t)
+{
+    Style s = defaultToolStyle(t);
+    const QStringList v = QSettings().value(toolStyleKey(t)).toString().split(QLatin1Char(','));
+    if (v.size() == 3) {
+        const QColor c(v[0]);
+        if (c.isValid())
+            s.color = c;
+        s.width = qBound(1.0, v[1].toDouble(), 30.0);
+        s.fill = v[2] == QLatin1String("1");
+    }
+    return s;
+}
+
+void saveToolStyle(ToolType t, const Style& s)
+{
+    if (t == ToolType::None)
+        return;
+    QSettings().setValue(toolStyleKey(t), QStringLiteral("%1,%2,%3").arg(s.color.name()).arg(s.width).arg(s.fill ? 1 : 0));
+}
+
 QString colorText(const QColor& c)
 {
     return g_colorHex ? c.name().toUpper() : QStringLiteral("%1, %2, %3").arg(c.red()).arg(c.green()).arg(c.blue());
@@ -83,6 +118,7 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
             m_doc.restyle(shape, s);
         } else {
             m_toolCtx.style = s;
+            saveToolStyle(m_toolType, s);
             if (m_tool)
                 m_tool->styleChanged(m_toolCtx);
             update();
@@ -200,6 +236,10 @@ void OverlayWindow::selectTool(ToolType type)
     m_toolType = type;
     m_tool = createTool(type);
     m_toolbar->setCurrentTool(type);
+    if (type != ToolType::None) { // 换上这个工具上次用的样式
+        m_toolCtx.style = loadToolStyle(type);
+        m_toolbar->setStyle(m_toolCtx.style);
+    }
     if (!hasSelection())
         return;
     if (type == ToolType::None)
@@ -351,6 +391,7 @@ void OverlayWindow::wheelEvent(QWheelEvent* e)
         m_doc.restyle(shape, s);
     } else {
         m_toolCtx.style = s;
+        saveToolStyle(m_toolType, s);
         if (m_tool)
             m_tool->styleChanged(m_toolCtx); // 正在拖拽的图形、输入中的文字立即变粗 / 变细
         m_toolbar->setStyle(s);

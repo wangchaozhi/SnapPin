@@ -8,6 +8,7 @@
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QScreen>
+#include <QUrl>
 
 PinManager::~PinManager()
 {
@@ -83,6 +84,23 @@ bool PinManager::pinClipboard()
     const QPoint cursor = QCursor::pos();
     QScreen* screen = QGuiApplication::screenAt(cursor);
     const qreal dpr = screen ? screen->devicePixelRatio() : 1.0;
+
+    // 在资源管理器里复制的图片文件：每个文件贴一张，依次错开
+    if (mime->hasUrls()) {
+        int n = 0;
+        for (const QUrl& url : mime->urls()) {
+            if (!url.isLocalFile())
+                continue;
+            QImage img(url.toLocalFile());
+            if (img.isNull())
+                continue;
+            img.setDevicePixelRatio(dpr);
+            const QSize logical = (QSizeF(img.size()) / dpr).toSize();
+            pin(img, cursor - QPoint(logical.width() / 2, logical.height() / 2) + QPoint(24, 24) * n++);
+        }
+        if (n > 0)
+            return true;
+    }
 
     QImage image;
     if (mime->hasImage()) {

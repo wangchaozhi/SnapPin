@@ -10,20 +10,70 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+QString expandFileNamePattern(const QString& pattern, const QDateTime& when)
+{
+    // $...$ 之间按日期时间格式替换，其余原样保留；去掉文件名里不允许的字符
+    QString out;
+    const QStringList parts = pattern.split(QLatin1Char('$'));
+    for (int i = 0; i < parts.size(); ++i)
+        out += (i % 2 == 1) ? when.toString(parts[i]) : parts[i];
+    static const QString kInvalid = QStringLiteral("\\/:*?\"<>|");
+    for (QChar& c : out) {
+        if (kInvalid.contains(c))
+            c = QLatin1Char('_');
+    }
+    return out.trimmed().isEmpty() ? QStringLiteral("SnapPin") : out.trimmed();
+}
+
+namespace {
+
+QString saveFormat()
+{
+    return QSettings().value(QStringLiteral("save/format"), QStringLiteral("png")).toString() == QLatin1String("jpg")
+               ? QStringLiteral("jpg")
+               : QStringLiteral("png");
+}
+
+QString defaultBaseName()
+{
+    const QString pattern = QSettings().value(QStringLiteral("save/pattern"), QStringLiteral("SnapPin_$yyyyMMdd_HHmmss$")).toString();
+    return expandFileNamePattern(pattern, QDateTime::currentDateTime());
+}
+
+// JPG 用设置里的质量；JPG 没有透明通道，先铺白底
+bool writeImage(const QImage& image, const QString& path)
+{
+    const QString suffix = QFileInfo(path).suffix().toLower();
+    if (suffix == QLatin1String("jpg") || suffix == QLatin1String("jpeg")) {
+        QImage flat(image.size(), QImage::Format_RGB32);
+        flat.setDevicePixelRatio(image.devicePixelRatio()); // 否则高分屏截图会按逻辑尺寸缩小画上去
+        flat.fill(Qt::white);
+        QPainter(&flat).drawImage(0, 0, image);
+        return flat.save(path, "JPG", qBound(1, QSettings().value(QStringLiteral("save/quality"), 90).toInt(), 100));
+    }
+    return image.save(path);
+}
+
+} // namespace
+
 bool saveImageInteractive(const QImage& image, QWidget* parent)
 {
     QSettings settings;
     const QString lastDir = settings.value(QStringLiteral("save/lastDir"),
                                            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).toString();
-    const QString name = QStringLiteral("SnapPin_%1.png").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
-
+    const QString format = saveFormat();
+    const QString name = defaultBaseName() + QLatin1Char('.') + format;
+    const QString png = QObject::tr("PNG 图片 (*.png)");
+    const QString jpg = QObject::tr("JPEG 图片 (*.jpg *.jpeg)");
+    const QString bmp = QObject::tr("BMP 图片 (*.bmp)");
+    QString selected = format == QLatin1String("jpg") ? jpg : png;
     const QString path = QFileDialog::getSaveFileName(parent, QObject::tr("保存图片"), QDir(lastDir).filePath(name),
-                                                      QObject::tr("PNG 图片 (*.png);;JPEG 图片 (*.jpg *.jpeg);;BMP 图片 (*.bmp)"));
+                                                      QStringList{png, jpg, bmp}.join(QStringLiteral(";;")), &selected);
     if (path.isEmpty())
         return false;
     settings.setValue(QStringLiteral("save/lastDir"), QFileInfo(path).absolutePath());
 
-    if (!image.save(path)) {
+    if (!writeImage(image, path)) {
         QMessageBox::warning(parent, QObject::tr("保存失败"), QObject::tr("无法写入文件：\n%1").arg(path));
         return false;
     }
@@ -33,7 +83,8 @@ bool saveImageInteractive(const QImage& image, QWidget* parent)
 QString quickSaveDir()
 {
     const QString fallback = QDir(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).filePath(QStringLiteral("SnapPin"));
-    return QSettings().value(QStringLiteral("save/quickDir"), fallback).toString();
+    const QString dir = QSettings().value(QStringLiteral("save/quickDir")).toString();
+    return dir.isEmpty() ? fallback : dir;
 }
 
 QString quickSaveImage(const QImage& image)
@@ -41,10 +92,13 @@ QString quickSaveImage(const QImage& image)
     const QDir dir(quickSaveDir());
     if (!QDir().mkpath(dir.path()))
         return {};
-    // 同一秒内多次保存时加毫秒，避免覆盖
-    const QString path = dir.filePath(QStringLiteral("SnapPin_%1.png")
-                                          .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"))));
-    return image.save(path) ? path : QString();
+    // 文件名格式精确到秒时，同一秒内多次保存加序号，避免覆盖
+    const QString base = defaultBaseName();
+    const QString suffix = QLatin1Char('.') + saveFormat();
+    QString path = dir.filePath(base + suffix);
+    for (int n = 2; QFileInfo::exists(path); ++n)
+        path = dir.filePath(QStringLiteral("%1_%2%3").arg(base).arg(n).arg(suffix));
+    return writeImage(image, path) ? path : QString();
 }
 
 QImage renderTextImage(const QString& text, qreal dpr)

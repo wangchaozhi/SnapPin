@@ -25,6 +25,12 @@ AppSettings AppSettings::load()
     a.historyEnabled = s.value(QStringLiteral("history/enabled"), a.historyEnabled).toBool();
     a.historyMax = s.value(QStringLiteral("history/max"), a.historyMax).toInt();
     a.autoUpdate = s.value(QStringLiteral("update/auto"), a.autoUpdate).toBool();
+    a.captureCursor = s.value(QStringLiteral("capture/cursor"), a.captureCursor).toBool();
+    // 保存相关的键由 imageutil 直接读取
+    a.fileNamePattern = s.value(QStringLiteral("save/pattern"), a.fileNamePattern).toString();
+    a.saveFormat = s.value(QStringLiteral("save/format"), a.saveFormat).toString();
+    a.jpgQuality = s.value(QStringLiteral("save/quality"), a.jpgQuality).toInt();
+    a.quickSaveDir = s.value(QStringLiteral("save/quickDir")).toString();
     return a;
 }
 
@@ -38,4 +44,12 @@ void AppSettings::save() const
     s.setValue(QStringLiteral("history/enabled"), historyEnabled);
     s.setValue(QStringLiteral("history/max"), historyMax);
     s.setValue(QStringLiteral("update/auto"), autoUpdate);
+    s.setValue(QStringLiteral("capture/cursor"), captureCursor);
+    s.setValue(QStringLiteral("save/pattern"), fileNamePattern);
+    s.setValue(QStringLiteral("save/format"), saveFormat);
+    s.setValue(QStringLiteral("save/quality"), jpgQuality);
+    if (quickSaveDir.isEmpty())
+        s.remove(QStringLiteral("save/quickDir"));
+    else
+        s.setValue(QStringLiteral("save/quickDir"), quickSaveDir);
 }

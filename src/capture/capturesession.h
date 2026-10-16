@@ -15,6 +15,7 @@ public:
     CaptureSession(IScreenCapturer* capturer, IWindowFinder* finder, QObject* parent = nullptr);
     ~CaptureSession() override;
 
+    void setIncludeCursor(bool on) { m_includeCursor = on; } // 截图里带上鼠标指针
     void start();
     // 编辑已有图片（贴图）：把图片按原始大小合成到所在屏幕的截图上，并预先选中它
     void startEdit(const QImage& image, const QPoint& globalTopLeft);
@@ -31,4 +32,5 @@ private:
     IScreenCapturer* m_capturer;
     IWindowFinder* m_finder;
     QList<OverlayWindow*> m_overlays;
+    bool m_includeCursor = false;
 };

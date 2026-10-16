@@ -1,13 +1,19 @@
 #include "settingsdialog.h"
 
 #include "actionregistry.h"
+#include "imageutil.h"
 #include "platform/platform.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QStandardPaths>
 #include <QGroupBox>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -75,7 +81,60 @@ QWidget* SettingsDialog::createGeneralPage(const QString& historyDir)
     m_uia->setChecked(m_settings.uiAutomation);
     m_uia->setToolTip(tr("可选中按钮、输入框等控件。复杂程序的识别结果会稍晚出现"));
     captureForm->addRow(m_uia);
+#ifdef Q_OS_WIN
+    m_cursor = new QCheckBox(tr("截图时包含鼠标指针"), capture);
+#else
+    m_cursor = new QCheckBox(tr("截图时包含鼠标指针（当前平台暂不支持）"), capture);
+    m_cursor->setEnabled(false);
+#endif
+    m_cursor->setChecked(m_settings.captureCursor);
+    captureForm->addRow(m_cursor);
     layout->addWidget(capture);
+
+    auto* save = new QGroupBox(tr("保存"), page);
+    auto* saveForm = new QFormLayout(save);
+    m_pattern = new QLineEdit(m_settings.fileNamePattern, save);
+    m_pattern->setToolTip(tr("$ 与 $ 之间按日期时间格式替换：yyyy 年、MM 月、dd 日、HH 时、mm 分、ss 秒、zzz 毫秒"));
+    auto* preview = new QLabel(save);
+    preview->setStyleSheet(QStringLiteral("color:gray;"));
+    auto updatePreview = [this, preview] {
+        preview->setText(tr("示例：%1.%2").arg(expandFileNamePattern(m_pattern->text(), QDateTime::currentDateTime()),
+                                              m_format->currentData().toString()));
+    };
+    saveForm->addRow(tr("文件名："), m_pattern);
+    m_format = new QComboBox(save);
+    m_format->addItem(QStringLiteral("PNG"), QStringLiteral("png"));
+    m_format->addItem(QStringLiteral("JPG"), QStringLiteral("jpg"));
+    m_format->setCurrentIndex(qMax(0, m_format->findData(m_settings.saveFormat)));
+    saveForm->addRow(tr("默认格式："), m_format);
+    saveForm->addRow(QString(), preview);
+    m_quality = new QSpinBox(save);
+    m_quality->setRange(1, 100);
+    m_quality->setValue(m_settings.jpgQuality);
+    saveForm->addRow(tr("JPG 质量："), m_quality);
+    auto updateQuality = [this] { m_quality->setEnabled(m_format->currentData().toString() == QLatin1String("jpg")); };
+    connect(m_pattern, &QLineEdit::textChanged, this, updatePreview);
+    connect(m_format, &QComboBox::currentIndexChanged, this, [updatePreview, updateQuality] {
+        updatePreview();
+        updateQuality();
+    });
+    updatePreview();
+    updateQuality();
+
+    m_quickDir = new QLineEdit(m_settings.quickSaveDir, save);
+    m_quickDir->setPlaceholderText(QDir::toNativeSeparators(
+        QDir(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).filePath(QStringLiteral("SnapPin"))));
+    auto* browse = new QPushButton(tr("浏览…"), save);
+    connect(browse, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(this, tr("快速保存目录"), m_quickDir->text());
+        if (!dir.isEmpty())
+            m_quickDir->setText(QDir::toNativeSeparators(dir));
+    });
+    auto* quickRow = new QHBoxLayout;
+    quickRow->addWidget(m_quickDir);
+    quickRow->addWidget(browse);
+    saveForm->addRow(tr("快速保存到："), quickRow);
+    layout->addWidget(save);
 
     auto* history = new QGroupBox(tr("截图历史"), page);
     auto* historyForm = new QFormLayout(history);
@@ -126,6 +185,11 @@ AppSettings SettingsDialog::settings() const
     s.historyEnabled = m_history->isChecked();
     s.historyMax = m_historyMax->value();
     s.autoUpdate = m_autoUpdate->isChecked();
+    s.captureCursor = m_cursor->isChecked();
+    s.fileNamePattern = m_pattern->text().trimmed().isEmpty() ? AppSettings().fileNamePattern : m_pattern->text().trimmed();
+    s.saveFormat = m_format->currentData().toString();
+    s.jpgQuality = m_quality->value();
+    s.quickSaveDir = m_quickDir->text().trimmed();
     return s;
 }
 

@@ -247,7 +247,9 @@ void AppContext::startCapture()
 {
     if (m_session || m_scrollSession || m_settingsOpen) // 已在截图中，或正在设置快捷键
         return;
-    newSession()->start();
+    CaptureSession* session = newSession();
+    session->setIncludeCursor(m_settings.captureCursor);
+    session->start();
 }
 
 void AppContext::editPin(PinWindow* pin)

@@ -9,6 +9,7 @@ class ActionRegistry;
 class QCheckBox;
 class QComboBox;
 class QKeySequenceEdit;
+class QLineEdit;
 class QSpinBox;
 
 class SettingsDialog : public QDialog {
@@ -31,5 +32,10 @@ private:
     QCheckBox* m_uia = nullptr;
     QCheckBox* m_history = nullptr;
     QSpinBox* m_historyMax = nullptr;
+    QCheckBox* m_cursor = nullptr;
+    QLineEdit* m_pattern = nullptr;
+    QComboBox* m_format = nullptr;
+    QSpinBox* m_quality = nullptr;
+    QLineEdit* m_quickDir = nullptr;
     QMap<QString, QKeySequenceEdit*> m_hotkeyEdits;
 };

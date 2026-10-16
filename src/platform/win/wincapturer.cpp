@@ -4,6 +4,7 @@
 #include <QScreen>
 #include <QtGui/qscreen_platform.h>
 
+#include <cstring>
 #include <windows.h>
 
 HMONITOR monitorHandle(QScreen* screen)
@@ -25,6 +26,56 @@ QRect physicalScreenRect(QScreen* screen)
     const qreal dpr = screen->devicePixelRatio();
     const QRect g = screen->geometry();
     return QRect(g.topLeft() * dpr, g.size() * dpr);
+}
+
+void WinScreenCapturer::paintCursor(QPixmap& shot, QScreen* screen)
+{
+    CURSORINFO ci{};
+    ci.cbSize = sizeof(ci);
+    if (!GetCursorInfo(&ci) || !(ci.flags & CURSOR_SHOWING) || !ci.hCursor)
+        return;
+    ICONINFO ii{};
+    if (!GetIconInfo(ci.hCursor, &ii))
+        return;
+    const QRect phys = physicalScreenRect(screen);
+    const int x = ci.ptScreenPos.x - int(ii.xHotspot) - phys.left();
+    const int y = ci.ptScreenPos.y - int(ii.yHotspot) - phys.top();
+    if (ii.hbmMask)
+        DeleteObject(ii.hbmMask);
+    if (ii.hbmColor)
+        DeleteObject(ii.hbmColor);
+
+    // 用 GDI 的 DrawIconEx 画，彩色指针、反色的 I 形光标都和系统显示一致
+    QImage img = shot.toImage().convertToFormat(QImage::Format_RGB32);
+    const int w = img.width(), h = img.height();
+    if (x >= w || y >= h || x <= -64 || y <= -64) // 指针不在这块屏幕上（多屏时其他屏也会走到这里）
+        return;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    HDC screenDc = GetDC(nullptr);
+    HDC memDc = CreateCompatibleDC(screenDc);
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(screenDc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (bmp && bits) {
+        HGDIOBJ old = SelectObject(memDc, bmp);
+        std::memcpy(bits, img.constBits(), size_t(img.sizeInBytes()));
+        if (DrawIconEx(memDc, x, y, ci.hCursor, 0, 0, 0, nullptr, DI_NORMAL | DI_DEFAULTSIZE)) {
+            GdiFlush();
+            std::memcpy(img.bits(), bits, size_t(img.sizeInBytes()));
+            const qreal dpr = shot.devicePixelRatio();
+            shot = QPixmap::fromImage(img);
+            shot.setDevicePixelRatio(dpr);
+        }
+        SelectObject(memDc, old);
+        DeleteObject(bmp);
+    }
+    DeleteDC(memDc);
+    ReleaseDC(nullptr, screenDc);
 }
 
 QPixmap GdiScreenCapturer::grab(QScreen* screen)

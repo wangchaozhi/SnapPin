@@ -18,6 +18,8 @@ public:
     virtual QPixmap grab(QScreen* screen) = 0;
     // 截屏后端，取值由平台决定（Windows: "auto" = DXGI 优先，"gdi"）
     virtual void setBackend(const QString&) {}
+    // 把截图那一刻的鼠标指针（实际形状）画进截图；不支持的平台什么也不做
+    virtual void paintCursor(QPixmap& shot, QScreen* screen) { Q_UNUSED(shot) Q_UNUSED(screen) }
 };
 
 struct DetectedWindow {
