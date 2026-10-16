@@ -161,6 +161,30 @@ Drawer drawerFor(ToolIcon id)
             p.restore();
         };
 
+    case ToolIcon::Eraser:
+        return [](QPainter& p, const QColor&) {
+            // 斜放的橡皮：外框 + 擦头分界线 + 底部一条擦过的痕迹
+            p.drawPath(polyline({{8.2, 15.5}, {3.6, 10.9}, {10.6, 3.9}, {16.4, 9.7}, {10.6, 15.5}, {8.2, 15.5}}));
+            p.drawLine(QPointF(6.9, 7.6), QPointF(12.7, 13.4));
+            p.drawLine(QPointF(10.6, 15.5), QPointF(16.5, 15.5));
+        };
+
+    case ToolIcon::Fill:
+        return [](QPainter& p, const QColor& c) {
+            // 圆角方块，右下半边填充
+            const QRectF box(4.0, 4.0, 12.0, 12.0);
+            p.drawRoundedRect(box, 1.5, 1.5);
+            p.save();
+            p.setPen(Qt::NoPen);
+            p.setBrush(c);
+            QPainterPath half;
+            half.addRoundedRect(box, 1.5, 1.5);
+            QPainterPath tri;
+            tri.addPolygon(QPolygonF{box.topRight(), box.bottomRight(), box.bottomLeft()});
+            p.drawPath(half.intersected(tri));
+            p.restore();
+        };
+
     case ToolIcon::Text:
         return [](QPainter& p, const QColor&) {
             p.drawPath(polyline({{5.0, 6.5}, {5.0, 4.5}, {15.0, 4.5}, {15.0, 6.5}}));

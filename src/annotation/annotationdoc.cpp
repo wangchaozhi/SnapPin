@@ -115,7 +115,7 @@ void AnnotationDoc::commitMove(Shape* shape, const QPointF& delta)
 void AnnotationDoc::restyle(Shape* shape, const Style& style)
 {
     auto sp = find(shape);
-    if (!sp || (sp->style.color == style.color && qFuzzyCompare(sp->style.width, style.width)))
+    if (!sp || sp->style == style)
         return;
     m_undo.push(new RestyleCommand(this, sp, style));
 }

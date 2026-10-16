@@ -288,6 +288,7 @@ void OverlayWindow::paintWidthHint(QPainter& p) const
     QString label = QString::number(w);
     switch (m_toolType) {
     case ToolType::Marker: d = w * 4; break;
+    case ToolType::Eraser: d = w * 4; break;
     case ToolType::Mosaic: d = w * 3; break;
     case ToolType::Number: d = 2 * (9 + w * 1.5); break;
     case ToolType::Text:
@@ -303,6 +304,10 @@ void OverlayWindow::paintWidthHint(QPainter& p) const
         p.setPen(QPen(Qt::white, 1));
         QColor fill = m_toolCtx.style.color;
         fill.setAlpha(m_toolType == ToolType::Marker ? 110 : 200);
+        if (m_toolType == ToolType::Eraser) { // 橡皮擦没有颜色：只画范围
+            fill = QColor(255, 255, 255, 60);
+            p.setPen(QPen(QColor(0, 0, 0, 160), 1, Qt::DashLine));
+        }
         p.setBrush(fill);
         if (m_toolType == ToolType::Mosaic)
             p.drawRect(QRectF(c.x() - d / 2, c.y() - d / 2, d, d));
@@ -548,8 +553,8 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
             finish(FinishAction::Copy);
             return;
         }
-        if (ctrl && e->key() == Qt::Key_S) {
-            finish(FinishAction::Save);
+        if (ctrl && e->key() == Qt::Key_S) { // Ctrl+Shift+S：不弹对话框，直接存到快速保存目录
+            finish((e->modifiers() & Qt::ShiftModifier) ? FinishAction::QuickSave : FinishAction::Save);
             return;
         }
         if (ctrl && e->key() == Qt::Key_T) {

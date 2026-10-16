@@ -34,14 +34,14 @@ bool RectShape::hitTest(const QPointF& pos, qreal tolerance) const
 {
     QPainterPath path;
     path.addRect(rect());
-    return strokeHit(path, pos, tolerance);
+    return (style.fill && path.contains(pos)) || strokeHit(path, pos, tolerance);
 }
 
 bool EllipseShape::hitTest(const QPointF& pos, qreal tolerance) const
 {
     QPainterPath path;
     path.addEllipse(rect());
-    return strokeHit(path, pos, tolerance);
+    return (style.fill && path.contains(pos)) || strokeHit(path, pos, tolerance);
 }
 
 bool ArrowShape::hitTest(const QPointF& pos, qreal tolerance) const
@@ -59,15 +59,41 @@ bool PenShape::hitTest(const QPointF& pos, qreal tolerance) const
 void RectShape::paint(QPainter& p, const RenderContext&) const
 {
     p.setPen(QPen(style.color, style.width, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
-    p.setBrush(Qt::NoBrush);
+    p.setBrush(style.fill ? QBrush(style.color) : QBrush(Qt::NoBrush));
     p.drawRect(rect());
 }
 
 void EllipseShape::paint(QPainter& p, const RenderContext&) const
 {
     p.setPen(QPen(style.color, style.width));
-    p.setBrush(Qt::NoBrush);
+    p.setBrush(style.fill ? QBrush(style.color) : QBrush(Qt::NoBrush));
     p.drawEllipse(rect());
+}
+
+void EraserShape::paint(QPainter& p, const RenderContext& ctx) const
+{
+    if (!ctx.source)
+        return;
+    QPainterPathStroker stroker;
+    stroker.setWidth(brush());
+    stroker.setCapStyle(Qt::RoundCap);
+    stroker.setJoinStyle(Qt::RoundJoin);
+    p.setClipPath(stroker.createStroke(path), Qt::IntersectClip);
+    p.drawPixmap(0, 0, *ctx.source); // 截图与标注同在屏幕局部的逻辑坐标系
+}
+
+QRectF EraserShape::boundingRect() const
+{
+    const qreal r = brush() / 2;
+    return path.boundingRect().adjusted(-r, -r, r, r);
+}
+
+bool EraserShape::hitTest(const QPointF& pos, qreal tolerance) const
+{
+    QPainterPathStroker stroker;
+    stroker.setWidth(brush() + tolerance * 2);
+    stroker.setCapStyle(Qt::RoundCap);
+    return stroker.createStroke(path).contains(pos);
 }
 
 void ArrowShape::paint(QPainter& p, const RenderContext&) const
@@ -200,11 +226,23 @@ QFont TextShape::fontFor(const Style& s)
 void TextShape::paint(QPainter& p, const RenderContext&) const
 {
     p.setFont(fontFor(style));
-    p.setPen(style.color);
+    if (style.fill) {
+        // 底色模式：所选颜色做圆角底，文字用黑或白保证对比度
+        p.setPen(Qt::NoPen);
+        p.setBrush(style.color);
+        const QRectF bg = boundingRect();
+        p.drawRoundedRect(bg, bg.height() * 0.2, bg.height() * 0.2);
+        p.setPen(style.color.lightnessF() > 0.6 ? QColor(20, 20, 20) : QColor(Qt::white));
+    } else {
+        p.setPen(style.color);
+    }
     p.drawText(QRectF(pos, QSizeF(1, 1)), kTextFlags, text);
 }
 
 QRectF TextShape::boundingRect() const
 {
-    return QFontMetricsF(fontFor(style)).boundingRect(QRectF(pos, QSizeF(1, 1)), kTextFlags, text);
+    const QFont f = fontFor(style);
+    const QRectF r = QFontMetricsF(f).boundingRect(QRectF(pos, QSizeF(1, 1)), kTextFlags, text);
+    const qreal pad = style.fill ? f.pixelSize() * 0.3 : 0; // 底色留出内边距
+    return r.adjusted(-pad, -pad * 0.5, pad, pad * 0.5);
 }

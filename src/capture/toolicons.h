@@ -12,6 +12,8 @@ enum class ToolIcon {
     Pen,
     Marker,
     Mosaic,
+    Eraser,
+    Fill,
     Text,
     Number,
     Undo,

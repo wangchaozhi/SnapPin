@@ -14,6 +14,10 @@ class QPixmap;
 struct Style {
     QColor color = QColor(255, 59, 48);
     qreal width = 4;
+    bool fill = false; // 矩形 / 椭圆画成实心，文字加底色
+
+    bool operator==(const Style& o) const { return color == o.color && qFuzzyCompare(width, o.width) && fill == o.fill; }
+    bool operator!=(const Style& o) const { return !(*this == o); }
 };
 
 struct RenderContext {
@@ -121,6 +125,21 @@ public:
 
     QPointF pos; // 文字左上角
     QString text;
+};
+
+// 橡皮擦：沿笔迹把原始截图画回来，盖住下面的标注
+class EraserShape : public Shape {
+public:
+    using Shape::Shape;
+    void paint(QPainter& p, const RenderContext& ctx) const override;
+    QRectF boundingRect() const override;
+    bool hitTest(const QPointF& pos, qreal tolerance) const override;
+    void translate(const QPointF& d) override { path.translate(d); }
+    std::unique_ptr<Shape> clone() const override { return std::make_unique<EraserShape>(*this); }
+
+    qreal brush() const { return style.width * 4; }
+
+    QPainterPath path;
 };
 
 // 序号标记：实心圆 + 白色数字，可拖出一条指向目标的尾巴

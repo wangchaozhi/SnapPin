@@ -141,6 +141,36 @@ private:
     std::unique_ptr<PenShape> m_shape;
 };
 
+// 橡皮擦：像画笔一样涂抹，涂过的地方露出原始截图
+class EraserTool : public ITool {
+public:
+    void press(const QPointF& pos, ToolContext& ctx) override
+    {
+        m_shape = std::make_unique<EraserShape>(ctx.style);
+        m_shape->path.moveTo(pos);
+        m_shape->path.lineTo(pos + QPointF(0.01, 0));
+    }
+    void move(const QPointF& pos, ToolContext&) override
+    {
+        if (m_shape)
+            m_shape->path.lineTo(pos);
+    }
+    void release(const QPointF&, ToolContext& ctx) override
+    {
+        if (m_shape)
+            ctx.doc->add(std::move(m_shape));
+        m_shape.reset();
+    }
+    void paintPreview(QPainter& p, const RenderContext& rc) const override
+    {
+        if (m_shape)
+            m_shape->paint(p, rc);
+    }
+
+private:
+    std::unique_ptr<EraserShape> m_shape;
+};
+
 // 文字：在宿主窗口上放一个无边框输入框，回车或失去焦点时提交
 class TextTool : public ITool, public QObject {
 public:
@@ -240,6 +270,8 @@ std::unique_ptr<ITool> createTool(ToolType type)
         return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<MosaicShape>(s); }, Constraint::Box);
     case ToolType::Number:
         return std::make_unique<NumberTool>();
+    case ToolType::Eraser:
+        return std::make_unique<EraserTool>();
     case ToolType::Pen:
         return std::make_unique<PenTool>(false);
     case ToolType::Marker:

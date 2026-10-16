@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QHash>
 
+class ColorPalette;
 class QToolButton;
 class QUndoStack;
 
@@ -26,6 +27,9 @@ signals:
     void copyRequested();
     void cancelRequested();
 
+protected:
+    void hideEvent(QHideEvent* e) override;
+
 private:
     QToolButton* addButton(const QIcon& icon, const QString& tip);
     void updateStyleButtons();
@@ -33,5 +37,7 @@ private:
     QHash<ToolType, QToolButton*> m_toolButtons;
     QToolButton* m_colorButton = nullptr;
     QToolButton* m_widthButton = nullptr;
+    QToolButton* m_fillButton = nullptr;
+    ColorPalette* m_palette = nullptr;
     Style m_style;
 };

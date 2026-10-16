@@ -13,7 +13,11 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCursor>
+#include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
 #include <QMenu>
+#include <QUrl>
 #include <QPainter>
 #include <QScreen>
 #include <QSystemTrayIcon>
@@ -108,6 +112,11 @@ void AppContext::setupTray()
             m_actions.trigger(QStringLiteral("capture"));
         else if (r == QSystemTrayIcon::MiddleClick)
             m_actions.trigger(QStringLiteral("pin_clipboard"));
+    });
+    connect(m_tray, &QSystemTrayIcon::messageClicked, this, [this] {
+        if (!m_quickSavedFolder.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(m_quickSavedFolder));
+        m_quickSavedFolder.clear();
     });
     m_tray->show();
     QApplication::setWindowIcon(m_tray->icon());
@@ -265,6 +274,16 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
     case FinishAction::Save:
         saveImageInteractive(image);
         break;
+    case FinishAction::QuickSave: {
+        const QString path = quickSaveImage(image);
+        if (path.isEmpty()) {
+            m_tray->showMessage(tr("保存失败"), tr("无法写入快速保存目录：\n%1").arg(quickSaveDir()), QSystemTrayIcon::Warning, 4000);
+        } else {
+            m_quickSavedFolder = QFileInfo(path).absolutePath(); // 点击通知打开所在文件夹
+            m_tray->showMessage(tr("已保存"), QDir::toNativeSeparators(path), QSystemTrayIcon::Information, 3000);
+        }
+        break;
+    }
     case FinishAction::Pin:
         if (editTarget) {
             editTarget->setImage(image);

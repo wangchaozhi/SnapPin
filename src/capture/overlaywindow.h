@@ -13,7 +13,7 @@
 class EditorToolbar;
 class OverlayState;
 
-enum class FinishAction { Copy, Save, Pin, LongCapture };
+enum class FinishAction { Copy, Save, QuickSave, Pin, LongCapture };
 
 // 单块屏幕上的截图遮罩。交互逻辑委托给 OverlayState（状态模式）
 class OverlayWindow : public QWidget {

@@ -60,4 +60,5 @@ private:
     QPointer<ScrollCaptureSession> m_scrollSession;
     QPointer<HistoryWindow> m_historyWindow;
     bool m_settingsOpen = false;
+    QString m_quickSavedFolder; // 快速保存后点击托盘通知打开这个文件夹
 };

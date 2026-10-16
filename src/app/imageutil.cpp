@@ -30,6 +30,23 @@ bool saveImageInteractive(const QImage& image, QWidget* parent)
     return true;
 }
 
+QString quickSaveDir()
+{
+    const QString fallback = QDir(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).filePath(QStringLiteral("SnapPin"));
+    return QSettings().value(QStringLiteral("save/quickDir"), fallback).toString();
+}
+
+QString quickSaveImage(const QImage& image)
+{
+    const QDir dir(quickSaveDir());
+    if (!QDir().mkpath(dir.path()))
+        return {};
+    // 同一秒内多次保存时加毫秒，避免覆盖
+    const QString path = dir.filePath(QStringLiteral("SnapPin_%1.png")
+                                          .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"))));
+    return image.save(path) ? path : QString();
+}
+
 QImage renderTextImage(const QString& text, qreal dpr)
 {
     constexpr int kMaxWidth = 600;

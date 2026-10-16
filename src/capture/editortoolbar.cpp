@@ -1,5 +1,6 @@
 #include "editortoolbar.h"
 
+#include "colorpalette.h"
 #include "platform/platform.h"
 #include "toolicons.h"
 
@@ -54,6 +55,7 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
         {ToolType::Pen, ToolIcon::Pen, "画笔"},
         {ToolType::Marker, ToolIcon::Marker, "荧光笔"},
         {ToolType::Mosaic, ToolIcon::Mosaic, "马赛克"},
+        {ToolType::Eraser, ToolIcon::Eraser, "橡皮擦：擦掉标注，露出原图"},
         {ToolType::Text, ToolIcon::Text, "文字"},
         {ToolType::Number, ToolIcon::Number, "序号（拖动可拉出指示尾巴）"},
     };
@@ -68,13 +70,27 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     layout->addWidget(separator(this));
 
     m_colorButton = addButton(QIcon(), tr("颜色"));
+    m_palette = new ColorPalette(parent);
     connect(m_colorButton, &QToolButton::clicked, this, [this] {
-        const QColor c = QColorDialog::getColor(m_style.color, window(), tr("选择颜色"));
+        if (m_palette->isVisible()) {
+            m_palette->hide();
+            return;
+        }
+        // 面板贴着工具栏弹出，左边与颜色按钮对齐
+        const QPoint at = m_colorButton->mapTo(parentWidget(), QPoint(0, 0));
+        m_palette->setCurrent(m_style.color);
+        m_palette->popup(QRect(at.x(), geometry().top(), m_colorButton->width(), geometry().height()));
+    });
+    auto applyColor = [this](const QColor& c) {
         if (!c.isValid())
             return;
         m_style.color = c;
         updateStyleButtons();
         emit styleChanged(m_style);
+    };
+    connect(m_palette, &ColorPalette::colorPicked, this, applyColor);
+    connect(m_palette, &ColorPalette::moreRequested, this, [this, applyColor] {
+        applyColor(QColorDialog::getColor(m_style.color, window(), tr("选择颜色")));
     });
 
     m_widthButton = addButton(QIcon(), QString());
@@ -89,6 +105,15 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
         }
         m_style.width = next;
         updateStyleButtons();
+        emit styleChanged(m_style);
+    });
+
+    m_fillButton = addButton(toolIcon(ToolIcon::Fill), tr("填充：矩形、椭圆画成实心，文字加底色"));
+    m_fillButton->setCheckable(true);
+    connect(m_fillButton, &QToolButton::toggled, this, [this](bool on) {
+        if (m_style.fill == on)
+            return;
+        m_style.fill = on;
         emit styleChanged(m_style);
     });
 
@@ -145,8 +170,16 @@ void EditorToolbar::setStyle(const Style& style)
     updateStyleButtons();
 }
 
+void EditorToolbar::hideEvent(QHideEvent* e)
+{
+    m_palette->hide();
+    QFrame::hideEvent(e);
+}
+
 void EditorToolbar::updateStyleButtons()
 {
+    const QSignalBlocker block(m_fillButton); // 同步显示，不当作用户操作
+    m_fillButton->setChecked(m_style.fill);
     m_colorButton->setIcon(colorIcon(m_style.color));
     m_widthButton->setIcon(widthIcon(m_style.width));
     m_widthButton->setToolTip(tr("粗细：%1（点击在细 / 中 / 粗之间切换，绘制时滚动鼠标滚轮微调）").arg(m_style.width));

@@ -8,7 +8,7 @@
 class AnnotationDoc;
 class QWidget;
 
-enum class ToolType { None, Rect, Ellipse, Line, Arrow, Pen, Marker, Mosaic, Text, Number };
+enum class ToolType { None, Rect, Ellipse, Line, Arrow, Pen, Marker, Mosaic, Eraser, Text, Number };
 
 struct ToolContext {
     AnnotationDoc* doc = nullptr;
