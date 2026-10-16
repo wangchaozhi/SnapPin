@@ -1,6 +1,7 @@
 #include "overlaywindow.h"
 
 #include "editortoolbar.h"
+#include "imageregions.h"
 #include "overlaystates.h"
 
 #include <QClipboard>
@@ -21,6 +22,7 @@ constexpr int kWidthHintMs = 900;   // 滚轮调粗细后，光标处的粗细�
 constexpr qreal kMinWidth = 1;
 constexpr qreal kMaxWidth = 30;
 constexpr int kRegionHistoryMax = 20;
+constexpr int kMinImageRegion = 8; // 从截图像素识别出的框，比这还小（逻辑像素）的不用
 constexpr int kSnapDistance = 5; // 拖动选区边时，离窗口 / 控件边缘这么近就吸附过去（逻辑像素）
 const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
@@ -168,7 +170,22 @@ QRect OverlayWindow::windowAt(const QPoint& pos) const
             best = w.rect;
         }
     }
-    return group < 0 ? rect() : (best & rect());
+    if (group < 0)
+        best = rect();
+
+    // 再按截图本身的像素找边框围成的矩形：远程桌面、虚拟机里的界面没有窗口 / 控件信息也能细到按钮、输入框
+    if (!m_imageRegions)
+        m_imageRegions = std::make_unique<ImageRegionDetector>(m_shotImage);
+    const qreal dpr = m_shot.devicePixelRatio();
+    const QRect phys = m_imageRegions->regionAt((QPointF(pos) * dpr).toPoint());
+    if (!phys.isEmpty()) {
+        const QRect r = QRectF(phys.x() / dpr, phys.y() / dpr, (phys.right() + 1) / dpr - phys.x() / dpr,
+                               (phys.bottom() + 1) / dpr - phys.y() / dpr).toRect() & best;
+        if (r.contains(pos) && r.width() >= kMinImageRegion && r.height() >= kMinImageRegion
+            && qint64(r.width()) * r.height() < qint64(best.width()) * best.height())
+            best = r;
+    }
+    return best & rect();
 }
 
 int OverlayWindow::snap(int value, Qt::Orientation o, bool farEdge, const QPoint& near) const

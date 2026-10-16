@@ -11,6 +11,7 @@
 #include <memory>
 
 class EditorToolbar;
+class ImageRegionDetector;
 class OverlayState;
 
 enum class FinishAction { Copy, Save, QuickSave, Pin, LongCapture };
@@ -77,6 +78,7 @@ private:
     QPixmap m_shot;      // 原始截图（逻辑坐标绘制）
     QImage m_shotImage;  // 同一份截图，供放大镜和取色按物理像素读取
     QList<DetectedWindow> m_windows;
+    mutable std::unique_ptr<ImageRegionDetector> m_imageRegions; // 按截图像素识别框，第一次悬停时才建
 
     QRect m_hover;
     QRect m_selection;

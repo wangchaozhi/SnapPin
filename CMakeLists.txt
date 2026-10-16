@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # 发布构建由 CI 根据 tag（v1.2.3）传入版本号
-set(SNAPPIN_VERSION "0.2.8" CACHE STRING "Application version")
+set(SNAPPIN_VERSION "0.2.9" CACHE STRING "Application version")
 # 自动更新从这个仓库的 GitHub Releases 获取新版本
 set(SNAPPIN_GITHUB_REPO "wangchaozhi/SnapPin" CACHE STRING "owner/repo for update checks")
 # 版本号错了自动更新会反复提示，宁可构建失败
@@ -52,6 +52,7 @@ set(CORE_SOURCES
     src/capture/toolicons.h src/capture/toolicons.cpp
     src/capture/colorpalette.h src/capture/colorpalette.cpp
     src/capture/scrollstitcher.h src/capture/scrollstitcher.cpp
+    src/capture/imageregions.h src/capture/imageregions.cpp
     src/capture/scrollcapture.h src/capture/scrollcapture.cpp
     src/pin/pinwindow.h src/pin/pinwindow.cpp
     src/pin/pinmanager.h src/pin/pinmanager.cpp
@@ -107,6 +108,10 @@ if(SNAPPIN_BUILD_TESTS)
     target_include_directories(scrollstitcher_test PRIVATE src)
     target_link_libraries(scrollstitcher_test PRIVATE Qt6::Gui)
     add_test(NAME scrollstitcher COMMAND scrollstitcher_test)
+    qt_add_executable(imageregions_test tests/imageregions_test.cpp src/capture/imageregions.cpp)
+    target_include_directories(imageregions_test PRIVATE src)
+    target_link_libraries(imageregions_test PRIVATE Qt6::Gui)
+    add_test(NAME imageregions COMMAND imageregions_test)
 endif()
 
 if(WIN32)
