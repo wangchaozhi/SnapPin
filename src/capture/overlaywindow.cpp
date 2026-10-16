@@ -79,10 +79,14 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     });
     // 选中了已画的图形时，颜色 / 粗细改到这个图形上（可撤销）；否则改当前工具的样式
     connect(m_toolbar, &EditorToolbar::styleChanged, this, [this](const Style& s) {
-        if (Shape* shape = m_doc.selected())
+        if (Shape* shape = m_doc.selected()) {
             m_doc.restyle(shape, s);
-        else
+        } else {
             m_toolCtx.style = s;
+            if (m_tool)
+                m_tool->styleChanged(m_toolCtx);
+            update();
+        }
     });
     connect(&m_doc, &AnnotationDoc::selectionChanged, this, [this](Shape* shape) {
         m_toolbar->setStyle(shape ? shape->style : m_toolCtx.style);
@@ -333,6 +337,8 @@ void OverlayWindow::wheelEvent(QWheelEvent* e)
         QWidget::wheelEvent(e);
         return;
     }
+    m_cursor = e->position().toPoint(); // 预览画在滚动时的光标处，不依赖之前的鼠标移动
+    m_cursorInside = true;
     m_wheelAccum += e->angleDelta().y();
     const int steps = m_wheelAccum / 120; // 高精度滚轮 / 触控板的小增量累计成整格
     if (steps == 0)
@@ -345,6 +351,8 @@ void OverlayWindow::wheelEvent(QWheelEvent* e)
         m_doc.restyle(shape, s);
     } else {
         m_toolCtx.style = s;
+        if (m_tool)
+            m_tool->styleChanged(m_toolCtx); // 正在拖拽的图形、输入中的文字立即变粗 / 变细
         m_toolbar->setStyle(s);
         m_widthHintTimer.start();
         update();

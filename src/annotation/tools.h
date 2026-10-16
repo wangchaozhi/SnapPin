@@ -25,6 +25,8 @@ public:
     virtual void move(const QPointF& pos, ToolContext& ctx) = 0;
     virtual void release(const QPointF& pos, ToolContext& ctx) = 0;
     virtual void paintPreview(QPainter&, const RenderContext&) const {}
+    // 颜色 / 粗细改变（滚轮、工具栏）：正在画的内容立即采用新样式，不必等下一次鼠标移动
+    virtual void styleChanged(ToolContext&) {}
     // 切换工具或完成截图前调用：提交未完成的内容（如正在输入的文字）
     virtual void finish(ToolContext&) {}
 };

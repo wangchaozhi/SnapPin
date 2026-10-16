@@ -62,6 +62,11 @@ public:
         if (m_shape)
             m_shape->paint(p, rc);
     }
+    void styleChanged(ToolContext& ctx) override
+    {
+        if (m_shape)
+            m_shape->style = ctx.style;
+    }
 
 private:
     QPointF endPoint(const QPointF& pos, const ToolContext& ctx) const
@@ -104,6 +109,11 @@ public:
         if (m_shape)
             m_shape->paint(p, rc);
     }
+    void styleChanged(ToolContext& ctx) override
+    {
+        if (m_shape)
+            m_shape->style = ctx.style;
+    }
 
 private:
     std::unique_ptr<NumberShape> m_shape;
@@ -134,6 +144,11 @@ public:
     {
         if (m_shape)
             m_shape->paint(p, rc);
+    }
+    void styleChanged(ToolContext& ctx) override
+    {
+        if (m_shape)
+            m_shape->style = ctx.style;
     }
 
 private:
@@ -166,6 +181,11 @@ public:
         if (m_shape)
             m_shape->paint(p, rc);
     }
+    void styleChanged(ToolContext& ctx) override
+    {
+        if (m_shape)
+            m_shape->style = ctx.style;
+    }
 
 private:
     std::unique_ptr<EraserShape> m_shape;
@@ -187,27 +207,26 @@ public:
 
         auto* edit = new QLineEdit(ctx.host);
         edit->setFrame(false);
-        edit->setFont(TextShape::fontFor(m_style));
         edit->setTextMargins(0, 0, 0, 0);
-        edit->setStyleSheet(QStringLiteral("QLineEdit{background:rgba(255,255,255,40);color:%1;"
-                                           "border:1px dashed %1;padding:0px;}")
-                                .arg(m_style.color.name()));
-        const QFontMetrics fm(edit->font());
-        edit->setGeometry(QRect(pos.toPoint() - QPoint(2, 2), QSize(fm.averageCharWidth() * 8, fm.height() + 6)));
-        QObject::connect(edit, &QLineEdit::textChanged, edit, [edit](const QString& t) {
-            const QFontMetrics m(edit->font());
-            edit->resize(qMax(m.averageCharWidth() * 8, m.horizontalAdvance(t) + m.averageCharWidth() * 2),
-                         edit->height());
-        });
+        edit->move(pos.toPoint() - QPoint(2, 2));
+        QObject::connect(edit, &QLineEdit::textChanged, edit, [this] { fitEditor(); });
         QObject::connect(edit, &QLineEdit::returnPressed, edit, [this] { if (m_ctx) commit(*m_ctx); });
         edit->installEventFilter(this);
+        m_editor = edit;
+        applyEditorStyle();
         edit->show();
         edit->setFocus();
-        m_editor = edit;
     }
     void move(const QPointF&, ToolContext&) override {}
     void release(const QPointF&, ToolContext&) override {}
     void finish(ToolContext& ctx) override { commit(ctx); }
+    void styleChanged(ToolContext& ctx) override
+    {
+        // 输入中的文字立即换颜色 / 字号
+        m_style = ctx.style;
+        if (m_editor)
+            applyEditorStyle();
+    }
 
 protected:
     bool eventFilter(QObject* obj, QEvent* e) override
@@ -221,6 +240,21 @@ protected:
     }
 
 private:
+    void applyEditorStyle()
+    {
+        m_editor->setFont(TextShape::fontFor(m_style));
+        m_editor->setStyleSheet(QStringLiteral("QLineEdit{background:rgba(255,255,255,40);color:%1;"
+                                               "border:1px dashed %1;padding:0px;}")
+                                    .arg(m_style.color.name()));
+        fitEditor();
+    }
+    void fitEditor()
+    {
+        const QFontMetrics m(m_editor->font());
+        m_editor->resize(qMax(m.averageCharWidth() * 8, m.horizontalAdvance(m_editor->text()) + m.averageCharWidth() * 2),
+                         m.height() + 6);
+    }
+
     void commit(ToolContext& ctx)
     {
         if (!m_editor)
