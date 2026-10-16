@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 512 512">
-  <!-- SnapPin 应用图标：2×2 色块，右上一块被“贴”起来浮在原位（虚线）之上。马卡龙配色。
+  <!-- SnapPin 应用图标：2×2 色块，右上一块被“贴”起来浮在原位（虚线）之上。马卡龙“深一档”配色（与白天模式截图工具栏一致）。
        ≤32px 用 snappin-small.svg；改完运行 tools/gen_icons.py 重新生成各平台图标 -->
-  <rect x="40" y="96" width="176" height="176" rx="20" fill="#A0C4FF"/>
-  <rect x="40" y="296" width="176" height="176" rx="20" fill="#BDB2FF"/>
-  <rect x="240" y="296" width="176" height="176" rx="20" fill="#B9FBC0"/>
-  <rect x="240" y="96" width="176" height="176" rx="20" fill="none" stroke="#C9C6D6" stroke-width="10" stroke-dasharray="26 18"/>
+  <rect x="40" y="96" width="176" height="176" rx="20" fill="#5B8DEF"/>
+  <rect x="40" y="296" width="176" height="176" rx="20" fill="#8A7BEA"/>
+  <rect x="240" y="296" width="176" height="176" rx="20" fill="#3FAF5A"/>
+  <rect x="240" y="96" width="176" height="176" rx="20" fill="none" stroke="#A8A3B8" stroke-width="10" stroke-dasharray="26 18"/>
   <rect x="314" y="54" width="176" height="176" rx="20" fill="#1E2A3A" opacity="0.18"/>
-  <rect x="304" y="40" width="176" height="176" rx="20" fill="#FFADAD"/>
+  <rect x="304" y="40" width="176" height="176" rx="20" fill="#E06C6C"/>
 </svg>
