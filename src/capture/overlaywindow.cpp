@@ -142,7 +142,6 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     connect(m_toolbar, &EditorToolbar::saveRequested, this, [this] { finish(FinishAction::Save); });
     connect(m_toolbar, &EditorToolbar::longCaptureRequested, this, [this] { finish(FinishAction::LongCapture); });
     connect(m_toolbar, &EditorToolbar::copyRequested, this, [this] { finish(FinishAction::Copy); });
-    connect(m_toolbar, &EditorToolbar::cancelRequested, this, &OverlayWindow::cancel);
     connect(&m_doc, &AnnotationDoc::changed, this, qOverload<>(&QWidget::update));
 
     setState(std::make_unique<IdleState>(this));

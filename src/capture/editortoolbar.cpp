@@ -136,10 +136,9 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     }
     connect(addButton(toolIcon(ToolIcon::Pin), tr("贴图 (Ctrl+T)")), &QToolButton::clicked, this, &EditorToolbar::pinRequested);
     connect(addButton(toolIcon(ToolIcon::Save), tr("保存 (Ctrl+S)")), &QToolButton::clicked, this, &EditorToolbar::saveRequested);
-    connect(addButton(toolIcon(ToolIcon::Cancel), tr("取消 (Esc)")), &QToolButton::clicked, this, &EditorToolbar::cancelRequested);
-    // 主操作用主题色突出
-    connect(addButton(toolIcon(ToolIcon::Done, true), tr("复制到剪贴板 (Ctrl+C / 双击 / 回车)")), &QToolButton::clicked, this,
-            &EditorToolbar::copyRequested);
+    // 主操作用主题色突出；取消用 Esc，不单独放按钮
+    connect(addButton(toolIcon(ToolIcon::Copy, true), tr("复制到剪贴板 (Ctrl+C / 双击 / 回车)，Esc 取消")), &QToolButton::clicked,
+            this, &EditorToolbar::copyRequested);
 
     updateStyleButtons();
     adjustSize();

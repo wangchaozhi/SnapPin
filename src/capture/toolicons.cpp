@@ -227,18 +227,11 @@ Drawer drawerFor(ToolIcon id)
             p.drawRoundedRect(QRectF(7.0, 11.0, 6.0, 4.5), 0.8, 0.8);
         };
 
-    case ToolIcon::Cancel:
+    case ToolIcon::Copy:
         return [](QPainter& p, const QColor&) {
-            p.drawLine(QPointF(5.5, 5.5), QPointF(14.5, 14.5));
-            p.drawLine(QPointF(14.5, 5.5), QPointF(5.5, 14.5));
-        };
-
-    case ToolIcon::Done:
-        return [](QPainter& p, const QColor&) {
-            p.save();
-            p.setPen(QPen(p.pen().color(), 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p.drawPath(polyline({{4.5, 10.5}, {8.5, 14.5}, {15.5, 5.5}}));
-            p.restore();
+            // 两张叠放的纸：后面一张只露出左上角的折线，前面一张完整的圆角矩形
+            p.drawPath(polyline({{4.5, 12.5}, {4.5, 4.5}, {12.5, 4.5}}));
+            p.drawRoundedRect(QRectF(7.5, 7.5, 8.5, 8.5), 1.5, 1.5);
         };
     }
     return [](QPainter&, const QColor&) {};

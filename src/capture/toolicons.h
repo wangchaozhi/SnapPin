@@ -21,8 +21,7 @@ enum class ToolIcon {
     LongCapture,
     Pin,
     Save,
-    Cancel,
-    Done,
+    Copy,
 };
 
 // accent：始终用主题色绘制（主操作按钮）
