@@ -147,7 +147,10 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     setState(std::make_unique<IdleState>(this));
 }
 
-OverlayWindow::~OverlayWindow() = default;
+OverlayWindow::~OverlayWindow()
+{
+    delete m_toolbar; // 可能挂在别的遮罩里，不会随本窗口自动销毁；已经销毁时 QPointer 为空
+}
 
 void OverlayWindow::setState(std::unique_ptr<OverlayState> state)
 {
@@ -316,14 +319,28 @@ void OverlayWindow::updateToolbarGeometry()
 {
     if (!hasSelection())
         return;
+    // 工具栏放在选区右下角所在的屏幕上：跨屏选区拖到另一块屏幕时，工具栏跟过去（挂到那块屏幕的镜像遮罩里）
+    OverlayWindow* host = this;
+    const QPoint corner = m_selection.bottomRight();
+    if (!rect().contains(corner)) {
+        for (OverlayWindow* peer : std::as_const(m_peers)) {
+            if (peer != this && peer->rect().contains(corner + offsetTo(peer))) {
+                host = peer;
+                break;
+            }
+        }
+    }
+    m_toolbar->moveToHost(host);
+
+    const QRect sel = m_selection.translated(offsetTo(host));
     const QSize s = m_toolbar->sizeHint();
     const int gap = 6;
-    int x = qBound(0, m_selection.right() + 1 - s.width(), qMax(0, width() - s.width()));
-    int y = m_selection.bottom() + 1 + gap;
-    if (y + s.height() > height())
-        y = m_selection.top() - s.height() - gap; // 下方放不下放上方
+    int x = qBound(0, sel.right() + 1 - s.width(), qMax(0, host->width() - s.width()));
+    int y = sel.bottom() + 1 + gap;
+    if (y + s.height() > host->height())
+        y = sel.top() - s.height() - gap; // 下方放不下放上方
     if (y < 0)
-        y = m_selection.bottom() - s.height() - gap; // 都放不下放选区内
+        y = sel.bottom() - s.height() - gap; // 都放不下放选区内
     m_toolbar->setGeometry(QRect(QPoint(x, qMax(0, y)), s));
 }
 

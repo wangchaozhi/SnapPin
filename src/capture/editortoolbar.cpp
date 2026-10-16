@@ -161,6 +161,17 @@ void EditorToolbar::applyTheme()
     update();
 }
 
+void EditorToolbar::moveToHost(QWidget* host)
+{
+    if (host == parentWidget())
+        return;
+    const bool visible = isVisible();
+    m_palette->setHost(host);
+    setParent(host); // setParent 会隐藏控件
+    if (visible)
+        show();
+}
+
 void EditorToolbar::setCurrentTool(ToolType type)
 {
     for (auto it = m_toolButtons.cbegin(); it != m_toolButtons.cend(); ++it)

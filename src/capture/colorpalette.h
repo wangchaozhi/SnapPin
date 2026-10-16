@@ -10,6 +10,8 @@ public:
     explicit ColorPalette(QWidget* parent);
 
     void setCurrent(const QColor& color);
+    // 换到另一个遮罩里（跨屏选区时工具栏跟着选区换屏幕）
+    void setHost(QWidget* host);
     // 在 anchor（父控件坐标）下方弹出，放不下时放在上方
     void popup(const QRect& anchor);
 

@@ -56,6 +56,16 @@ void ColorPalette::applyTheme()
     update();
 }
 
+void ColorPalette::setHost(QWidget* host)
+{
+    if (host == parentWidget())
+        return;
+    hide();
+    parentWidget()->removeEventFilter(this);
+    setParent(host);
+    host->installEventFilter(this);
+}
+
 void ColorPalette::setCurrent(const QColor& color)
 {
     m_current = color;

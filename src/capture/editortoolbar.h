@@ -17,6 +17,8 @@ public:
     void setCurrentTool(ToolType type);
     Style style() const { return m_style; }
     void setStyle(const Style& style); // 外部改动（滚轮调粗细、选中图形）同步到按钮，不发出 styleChanged
+    // 换到另一个遮罩里显示（跨屏选区时放到选区所在的屏幕），信号连接不变
+    void moveToHost(QWidget* host);
 
 signals:
     void toolClicked(ToolType type); // 再次点击当前工具表示取消选择

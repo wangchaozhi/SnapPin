@@ -6,6 +6,7 @@
 
 #include <QImage>
 #include <QPixmap>
+#include <QPointer>
 #include <QTimer>
 #include <QWidget>
 #include <memory>
@@ -113,7 +114,7 @@ private:
     std::unique_ptr<ITool> m_tool;
     ToolContext m_toolCtx;
     RenderContext m_renderCtx;
-    EditorToolbar* m_toolbar;
+    QPointer<EditorToolbar> m_toolbar; // 跨屏选区时可能挂在镜像遮罩里，随它一起销毁
 
     QTimer m_widthHintTimer; // 运行期间在光标处显示粗细预览
     int m_wheelAccum = 0;
