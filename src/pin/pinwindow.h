@@ -29,6 +29,8 @@ public:
 
     // 鼠标穿透：点击直接落到下面的窗口，贴图只当参考图；穿透后只能从托盘菜单取消
     void setClickThrough(bool on);
+    // 切换鼠标穿透的快捷键（显示在右键菜单里），由设置决定
+    static void setClickThroughShortcut(const QString& keys) { s_clickThroughKeys = keys; }
     bool clickThrough() const;
     PinSnapshot snapshot() const;
     void applySnapshot(const PinSnapshot& s);
@@ -37,6 +39,7 @@ signals:
     void closeAllRequested();
     void editRequested();
     void closing(const PinSnapshot& state);
+    void clickThroughChanged(bool on);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -54,6 +57,7 @@ protected:
     void focusOutEvent(QFocusEvent*) override;
 
 private:
+    inline static QString s_clickThroughKeys;
     void setScale(qreal scale, const QPoint& anchorGlobal);
     void toggleThumbnail();
     void showHint(const QString& text);

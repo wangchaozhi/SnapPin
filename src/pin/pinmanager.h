@@ -23,8 +23,14 @@ public:
     bool restoreClosed(); // 恢复最近关闭的一张贴图（位置、缩放、旋转都还原）；没有可恢复的返回 false
     int clearClickThrough(); // 取消所有贴图的鼠标穿透，返回取消了几张
 
+    enum class ClickThroughToggle { On, Off, ClearedAll, Nothing };
+    // 光标下有贴图：切换它的鼠标穿透（穿透的贴图收不到鼠标，但快捷键照样能切回来）；
+    // 光标下没有贴图：取消所有贴图的鼠标穿透
+    ClickThroughToggle toggleClickThroughAt(const QPoint& globalPos);
+
 signals:
     void editRequested(PinWindow* pin);
+    void clickThroughEnabled(); // 有贴图开启了鼠标穿透（提示怎么恢复）
 
 private:
     PinWindow* create(const QImage& image);

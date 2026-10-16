@@ -238,6 +238,7 @@ void PinWindow::setClickThrough(bool on)
     if (visible)
         show();
     update();
+    emit clickThroughChanged(on);
 }
 
 bool PinWindow::clickThrough() const
@@ -315,8 +316,11 @@ void PinWindow::contextMenuEvent(QContextMenuEvent* e)
     QAction* thumb = menu.addAction(tr("缩略图\tShift+双击"), this, &PinWindow::toggleThumbnail);
     thumb->setCheckable(true);
     thumb->setChecked(m_thumbnail);
-    // 穿透后贴图收不到鼠标，只能从托盘菜单取消
-    menu.addAction(tr("鼠标穿透（从托盘菜单取消）"), this, [this] { setClickThrough(true); });
+    // 穿透后贴图收不到鼠标：把光标移到贴图上按快捷键切换回来（没设快捷键时从托盘菜单取消）
+    const QString keys = s_clickThroughKeys.isEmpty()
+                             ? QString()
+                             : QLatin1Char('\t') + QKeySequence(s_clickThroughKeys).toString(QKeySequence::NativeText);
+    menu.addAction(tr("鼠标穿透") + keys, this, [this] { setClickThrough(true); });
     menu.addSeparator();
     menu.addAction(tr("关闭\tEsc"), this, &QWidget::close);
     menu.addAction(tr("关闭所有贴图"), this, &PinWindow::closeAllRequested);

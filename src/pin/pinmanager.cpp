@@ -24,6 +24,10 @@ PinWindow* PinManager::create(const QImage& image)
     auto* w = new PinWindow(image);
     connect(w, &PinWindow::closeAllRequested, this, &PinManager::closeAll);
     connect(w, &PinWindow::editRequested, this, [this, w] { emit editRequested(w); });
+    connect(w, &PinWindow::clickThroughChanged, this, [this](bool on) {
+        if (on)
+            emit clickThroughEnabled();
+    });
     connect(w, &PinWindow::closing, this, [this](const PinSnapshot& s) {
         m_closed.append(s);
         if (m_closed.size() > kMaxClosed)
@@ -58,6 +62,20 @@ int PinManager::clearClickThrough()
         }
     }
     return n;
+}
+
+PinManager::ClickThroughToggle PinManager::toggleClickThroughAt(const QPoint& globalPos)
+{
+    // 后创建的贴图在上层，从后往前找
+    for (auto it = m_pins.crbegin(); it != m_pins.crend(); ++it) {
+        PinWindow* p = *it;
+        if (p && p->isVisible() && p->geometry().contains(globalPos)) {
+            const bool on = !p->clickThrough();
+            p->setClickThrough(on);
+            return on ? ClickThroughToggle::On : ClickThroughToggle::Off;
+        }
+    }
+    return clearClickThrough() > 0 ? ClickThroughToggle::ClearedAll : ClickThroughToggle::Nothing;
 }
 
 PinWindow* PinManager::pin(const QImage& image, const QPoint& globalTopLeft)

@@ -41,6 +41,14 @@ AppContext::AppContext(QObject* parent)
     , m_updateTimer(new QTimer(this))
 {
     connect(m_pins, &PinManager::editRequested, this, &AppContext::editPin);
+    // 贴图穿透后收不到鼠标，提示怎么恢复
+    connect(m_pins, &PinManager::clickThroughEnabled, this, [this] {
+        const QString keys = m_settings.hotkeys.value(QStringLiteral("toggle_click_through"));
+        const QString how = keys.isEmpty()
+                                ? tr("从托盘菜单“切换贴图的鼠标穿透”恢复")
+                                : tr("把光标移到贴图上按 %1 恢复").arg(QKeySequence(keys).toString(QKeySequence::NativeText));
+        m_tray->showMessage(tr("SnapPin"), tr("贴图已开启鼠标穿透，%1").arg(how), QSystemTrayIcon::Information, 3000);
+    });
     connect(m_updater, &Updater::notify, this, [this](const QString& title, const QString& text) {
         if (m_tray)
             m_tray->showMessage(title, text, QSystemTrayIcon::Information, 4000);
@@ -78,9 +86,18 @@ void AppContext::setupActions()
         if (!m_pins->restoreClosed())
             m_tray->showMessage(tr("SnapPin"), tr("没有可恢复的贴图"), QSystemTrayIcon::Information, 2000);
     });
-    m_actions.add(QStringLiteral("pins_interactive"), tr("取消贴图的鼠标穿透"), [this] {
-        if (m_pins->clearClickThrough() == 0)
-            m_tray->showMessage(tr("SnapPin"), tr("没有设置了鼠标穿透的贴图"), QSystemTrayIcon::Information, 2000);
+    m_actions.add(QStringLiteral("toggle_click_through"), tr("切换贴图的鼠标穿透"), [this] {
+        switch (m_pins->toggleClickThroughAt(QCursor::pos())) {
+        case PinManager::ClickThroughToggle::ClearedAll:
+            m_tray->showMessage(tr("SnapPin"), tr("已取消所有贴图的鼠标穿透"), QSystemTrayIcon::Information, 2000);
+            break;
+        case PinManager::ClickThroughToggle::Nothing:
+            m_tray->showMessage(tr("SnapPin"), tr("把光标移到贴图上再按，可以切换它的鼠标穿透"),
+                                QSystemTrayIcon::Information, 2000);
+            break;
+        default:
+            break;
+        }
     });
     m_actions.add(QStringLiteral("history"), tr("截图历史"), [this] { openHistory(); });
     m_actions.add(QStringLiteral("settings"), tr("设置..."), [this] { openSettings(); });
@@ -110,7 +127,7 @@ void AppContext::setupTray()
 void AppContext::rebuildTrayMenu()
 {
     static const char* const kMenu[] = {"capture", "pin_clipboard", nullptr,
-                                        "history", "toggle_pins", "close_pins", "restore_pin", "pins_interactive", nullptr,
+                                        "history", "toggle_pins", "close_pins", "restore_pin", "toggle_click_through", nullptr,
                                         "settings", "check_update", "quit"};
     m_trayMenu->clear();
     for (const char* id : kMenu) {
@@ -119,6 +136,9 @@ void AppContext::rebuildTrayMenu()
             continue;
         }
         const QString actionId = QString::fromLatin1(id);
+        // 鼠标穿透用快捷键切换；只有没设快捷键时才放进托盘菜单，免得穿透后没法恢复
+        if (actionId == QLatin1String("toggle_click_through") && !m_settings.hotkeys.value(actionId).isEmpty())
+            continue;
         QString text = m_actions.text(actionId);
         const QString keys = m_settings.hotkeys.value(actionId);
         if (!keys.isEmpty())
@@ -139,6 +159,7 @@ void AppContext::applySettings()
     m_history->setMaxCount(m_settings.historyMax);
     registerHotkeys();
     rebuildTrayMenu();
+    PinWindow::setClickThroughShortcut(m_settings.hotkeys.value(QStringLiteral("toggle_click_through")));
     const QIcon icon = makeAppIcon(m_settings.iconPalette);
     m_tray->setIcon(icon);
     QApplication::setWindowIcon(icon);
