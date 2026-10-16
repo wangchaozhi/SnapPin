@@ -1,15 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 256 256">
-  <!-- 小尺寸（16–32px）版本：铺满画布，只留朱日、两重山、小舟和一道水波，去掉纹理 -->
-  <clipPath id="ci"><rect x="8" y="8" width="240" height="240" rx="56"/></clipPath>
-  <rect x="8" y="8" width="240" height="240" rx="56" fill="#F6F0E3"/>
-  <g clip-path="url(#ci)">
-    <circle cx="178" cy="80" r="32" fill="#D8402A"/>
-    <path d="M 120 156 L 168 116 L 190 130 L 230 96 L 260 156 Z" fill="#8C939A"/>
-    <path d="M 0 156 L 40 104 L 60 118 L 96 66 L 136 118 L 150 108 L 186 156 Z" fill="#3A3F45"/>
-    <path d="M 36 184 L 100 184 M 160 180 L 220 180" stroke="#8C939A" stroke-width="10" stroke-linecap="round"/>
-    <path d="M 80 196 Q 128 220 182 194 Q 174 214 128 216 Q 96 216 80 196 Z" fill="#161616"/>
-    <path d="M 122 198 L 124 146 L 132 146 L 134 198 Z" fill="#161616"/>
-    <path d="M 136 152 Q 160 172 162 194 L 136 194 Z" fill="#161616" fill-opacity="0.6"/>
-  </g>
-  <rect x="12" y="12" width="232" height="232" rx="52" fill="none" stroke="#A89878" stroke-width="8"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 512 512">
+  <!-- 小尺寸（16–32px）版本：去掉虚线和阴影，色块加大 -->
+  <rect x="16" y="112" width="192" height="192" rx="28" fill="#A0C4FF"/>
+  <rect x="16" y="320" width="192" height="192" rx="28" fill="#BDB2FF"/>
+  <rect x="224" y="320" width="192" height="192" rx="28" fill="#B9FBC0"/>
+  <rect x="304" y="0" width="208" height="208" rx="28" fill="#FFADAD"/>
 </svg>

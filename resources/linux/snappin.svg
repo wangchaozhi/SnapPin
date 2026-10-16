@@ -1,30 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <!-- SnapPin 应用图标（水墨山水·孤舟）：远山、朱日、一叶小舟与水波。
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 512 512">
+  <!-- SnapPin 应用图标：2×2 色块，右上一块被“贴”起来浮在原位（虚线）之上。马卡龙配色。
        ≤32px 用 snappin-small.svg；改完运行 tools/gen_icons.py 重新生成各平台图标 -->
-  <defs>
-    <radialGradient id="paper" cx="0.4" cy="0.35" r="0.85"><stop offset="0" stop-color="#FCF8EF"/><stop offset="1" stop-color="#EADFC8"/></radialGradient>
-    <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.25  0 0 0 0.10 0"/><feComposite in2="SourceGraphic" operator="in"/></filter>
-    <filter id="brush" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.16" numOctaves="3" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G"/></filter>
-    <filter id="wash" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="11" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="8" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="1.4"/></filter>
-  </defs>
-  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#paper)"/>
-  <rect x="16" y="16" width="224" height="224" rx="52" fill="#fff" filter="url(#grain)"/>
-  <rect x="17" y="17" width="222" height="222" rx="51" fill="none" stroke="#B8A888" stroke-opacity="0.45" stroke-width="2"/>
-<clipPath id="ci"><rect x="16" y="16" width="224" height="224" rx="52"/></clipPath>
-  <g clip-path="url(#ci)">
-  <circle cx="170" cy="86" r="22" fill="#D8402A"/>
-  <g filter="url(#wash)">
-    <path d="M 16 150 L 46 112 L 60 122 L 88 84 L 116 120 L 130 110 L 170 150 Z" fill="#2B2B2B" fill-opacity="0.55"/>
-    <path d="M 120 150 L 160 126 L 180 136 L 214 112 L 240 150 Z" fill="#2B2B2B" fill-opacity="0.3"/>
-  </g>
-  <g stroke="#5A6470" stroke-linecap="round" stroke-opacity="0.5" stroke-width="3" fill="none">
-    <path d="M 40 170 L 96 170"/><path d="M 150 166 L 214 166"/><path d="M 70 200 L 120 200"/><path d="M 160 192 L 196 192"/>
-    <path d="M 160 106 L 180 106" stroke="#D8402A" stroke-opacity="0.4"/>
-  </g>
-  <g fill="#161616" filter="url(#brush)">
-    <path d="M 94 182 Q 128 196 166 180 Q 160 190 128 192 Q 104 192 94 182 Z"/>
-    <path d="M 120 182 L 121 150 L 124 150 L 125 182 Z"/>
-    <path d="M 126 154 Q 142 166 144 180 L 126 180 Z" fill-opacity="0.6"/>
-  </g>
-  </g>
+  <rect x="40" y="96" width="176" height="176" rx="20" fill="#A0C4FF"/>
+  <rect x="40" y="296" width="176" height="176" rx="20" fill="#BDB2FF"/>
+  <rect x="240" y="296" width="176" height="176" rx="20" fill="#B9FBC0"/>
+  <rect x="240" y="96" width="176" height="176" rx="20" fill="none" stroke="#C9C6D6" stroke-width="10" stroke-dasharray="26 18"/>
+  <rect x="314" y="54" width="176" height="176" rx="20" fill="#1E2A3A" opacity="0.18"/>
+  <rect x="304" y="40" width="176" height="176" rx="20" fill="#FFADAD"/>
 </svg>
