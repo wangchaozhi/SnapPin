@@ -18,7 +18,6 @@
 #include <QFileInfo>
 #include <QMenu>
 #include <QUrl>
-#include <QPainter>
 #include <QScreen>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -32,20 +31,11 @@ constexpr int kUpdateIntervalMs = 24 * 60 * 60 * 1000;  // 之后每天检查一
 
 QIcon makeAppIcon()
 {
-    QPixmap pm(64, 64);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0, 150, 255));
-    p.drawRoundedRect(QRectF(2, 2, 60, 60), 14, 14);
-    // 白色取景框四角
-    p.setPen(QPen(Qt::white, 6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    p.drawPolyline(QPolygonF{{16, 28}, {16, 16}, {28, 16}});
-    p.drawPolyline(QPolygonF{{36, 16}, {48, 16}, {48, 28}});
-    p.drawPolyline(QPolygonF{{48, 36}, {48, 48}, {36, 48}});
-    p.drawPolyline(QPolygonF{{28, 48}, {16, 48}, {16, 36}});
-    return QIcon(pm);
+    // 图标源文件在 resources/icons/*.svg，由 tools/gen_icons.py 生成各尺寸 PNG
+    QIcon icon;
+    for (int s : {16, 24, 32, 48, 64, 128, 256})
+        icon.addFile(QStringLiteral(":/icons/snappin-%1.png").arg(s), QSize(s, s));
+    return icon;
 }
 
 } // namespace

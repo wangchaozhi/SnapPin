@@ -92,7 +92,21 @@ else()
     set(PLATFORM_SOURCES src/platform/generic/genericplatform.cpp)
 endif()
 
-qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES})
+# 应用图标：Windows 嵌进 exe，macOS 放进 .app/Contents/Resources（源文件和生成脚本见 resources/icons、tools/gen_icons.py）
+if(WIN32)
+    set(APP_ICON_SOURCES resources/icons/snappin.rc)
+elseif(APPLE)
+    set(APP_ICON_SOURCES resources/icons/snappin.icns)
+    set_source_files_properties(resources/icons/snappin.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+endif()
+
+qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES} ${APP_ICON_SOURCES})
+# 托盘和窗口图标
+qt_add_resources(SnapPin app_icons FILES
+    resources/icons/png/snappin-16.png resources/icons/png/snappin-24.png resources/icons/png/snappin-32.png
+    resources/icons/png/snappin-48.png resources/icons/png/snappin-64.png resources/icons/png/snappin-128.png
+    resources/icons/png/snappin-256.png
+    PREFIX /icons BASE resources/icons/png)
 
 target_include_directories(SnapPin PRIVATE src)
 target_compile_definitions(SnapPin PRIVATE
@@ -124,6 +138,7 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/macos/Info.plist.in
         MACOSX_BUNDLE_GUI_IDENTIFIER com.github.wangchaozhi.SnapPin
         MACOSX_BUNDLE_BUNDLE_NAME SnapPin
+        MACOSX_BUNDLE_ICON_FILE snappin.icns
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     )
@@ -147,4 +162,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(TARGETS SnapPin RUNTIME DESTINATION bin)
     install(FILES resources/linux/snappin.desktop DESTINATION share/applications)
     install(FILES resources/linux/snappin.svg DESTINATION share/icons/hicolor/scalable/apps)
+    foreach(size 256 512)
+        install(FILES resources/icons/png/snappin-${size}.png
+                DESTINATION share/icons/hicolor/${size}x${size}/apps RENAME snappin.png)
+    endforeach()
 endif()
