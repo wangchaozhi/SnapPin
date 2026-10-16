@@ -13,15 +13,23 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QScrollBar>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
+namespace {
+// 查找面板打开时在文字上方留出一条，面板放在那里，不挡住文字
+class FindTextEdit : public QPlainTextEdit {
+public:
+    using QPlainTextEdit::QPlainTextEdit;
+    using QPlainTextEdit::setViewportMargins;
+};
+} // namespace
+
 OcrWindow::OcrWindow()
     : QWidget(nullptr, Qt::Window | Qt::WindowStaysOnTopHint)
     , m_status(new QLabel(this))
-    , m_edit(new QPlainTextEdit(this))
+    , m_edit(new FindTextEdit(this))
     , m_findBar(new QFrame(this))
     , m_findEdit(new QLineEdit(m_findBar))
     , m_replaceEdit(new QLineEdit(m_findBar))
@@ -79,7 +87,9 @@ OcrWindow::OcrWindow()
     QToolButton* replaceButton = toolButton(tr("替换"), tr("替换当前（回车）"));
     QToolButton* replaceAllButton = toolButton(tr("全部"), tr("全部替换"));
     // 图标按钮统一成方形，替换按钮各占两格，上下两行对齐
-    const int side = m_findEdit->sizeHint().height();
+    const int side = fontMetrics().height() + 10;
+    for (QLineEdit* e : {m_findEdit, m_replaceEdit})
+        e->setFixedHeight(side);
     for (QToolButton* b : {m_caseButton, prevButton, nextButton, closeFindButton})
         b->setFixedSize(side, side);
     for (QToolButton* b : {replaceButton, replaceAllButton}) {
@@ -151,18 +161,30 @@ OcrWindow::OcrWindow()
 void OcrWindow::applyColors()
 {
     const QPalette pal = QGuiApplication::palette();
-    QColor panel = pal.color(QPalette::Window);
+    auto rgba = [](QColor c, int alpha) {
+        c.setAlpha(alpha);
+        return c.name(QColor::HexArgb);
+    };
+    const QColor base = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::Text);
+    const QColor highlight = pal.color(QPalette::Highlight);
     if (m_glass) {
         QPalette editPal = m_edit->palette();
-        QColor base = pal.color(QPalette::Base);
-        base.setAlpha(90);
-        editPal.setColor(QPalette::Base, base);
+        editPal.setColor(QPalette::Base, QColor(rgba(base, 90)));
         m_edit->setPalette(editPal);
         m_edit->setFrameShape(QFrame::NoFrame);
-        panel.setAlpha(225);
     }
-    m_findBar->setStyleSheet(QStringLiteral("#findPanel { background: %1; border: 1px solid %2; border-radius: 8px; }")
-                                 .arg(panel.name(QColor::HexArgb), pal.color(QPalette::Mid).name()));
+    // 查找面板与窗口同一套风格：毛玻璃下是半透明的圆角面板、输入框和扁平按钮
+    const bool glass = m_glass;
+    m_findBar->setStyleSheet(QStringLiteral(
+        "#findPanel { background: %1; border: 1px solid %2; border-radius: 10px; }"
+        "#findPanel QLineEdit { background: %3; border: 1px solid %2; border-radius: 6px; padding: 0 6px; }"
+        "#findPanel QLineEdit:focus { border: 1px solid %4; }"
+        "#findPanel QToolButton { background: transparent; border: none; border-radius: 6px; padding: 0 6px; }"
+        "#findPanel QToolButton:hover { background: %5; }"
+        "#findPanel QToolButton:pressed, #findPanel QToolButton:checked { background: %6; }")
+        .arg(glass ? rgba(base, 110) : pal.color(QPalette::Window).name(), rgba(text, 40),
+             glass ? rgba(base, 150) : base.name(), highlight.name(), rgba(text, 25), rgba(highlight, 70)));
 }
 
 void OcrWindow::changeEvent(QEvent* e)
@@ -222,6 +244,7 @@ void OcrWindow::showFindBar(bool replace)
 void OcrWindow::hideFindBar()
 {
     m_findBar->hide();
+    placeFindBar();
     m_edit->setExtraSelections({});
     m_edit->setFocus();
 }
@@ -322,13 +345,15 @@ void OcrWindow::updateMatches()
 
 void OcrWindow::placeFindBar()
 {
-    if (!m_findBar->isVisible())
+    auto* edit = static_cast<FindTextEdit*>(m_edit);
+    if (!m_findBar->isVisible()) {
+        edit->setViewportMargins(0, 0, 0, 0);
         return;
+    }
     m_findBar->adjustSize();
+    edit->setViewportMargins(0, m_findBar->height() + 8, 0, 0);
     const QRect r = m_edit->geometry();
-    const QScrollBar* bar = m_edit->verticalScrollBar();
-    const int scrollWidth = bar->isVisible() ? bar->width() : 0;
-    m_findBar->move(r.right() - scrollWidth - m_findBar->width() - 6, r.top() + 6);
+    m_findBar->move(r.right() - m_findBar->width() - 4, r.top() + 4);
 }
 
 bool OcrWindow::eventFilter(QObject* watched, QEvent* e)
