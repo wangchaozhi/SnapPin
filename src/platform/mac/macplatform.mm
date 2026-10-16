@@ -126,7 +126,40 @@ private:
     bool m_installed = false;
 };
 
+// 原生窗口建好后隐藏标题文字（标题栏本身已由 ExpandedClientAreaHint 变透明）
+class MergedTitleFilter : public QObject {
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject* obj, QEvent* e) override
+    {
+        if (e->type() == QEvent::Show) {
+            NSWindow* w = nativeWindow(static_cast<QWidget*>(obj));
+            w.titleVisibility = NSWindowTitleHidden;
+            w.titlebarAppearsTransparent = YES; // 否则标题栏会把下面的标题行盖成模糊
+        }
+        return false;
+    }
+};
+
 } // namespace
+
+TitleBarMode setupMergedTitleBar(QWidget* window)
+{
+    window->setWindowFlag(Qt::ExpandedClientAreaHint);
+    window->installEventFilter(new MergedTitleFilter(window));
+    return TitleBarMode::OwnTitle;
+}
+
+QMargins titleBarInsets(QWidget* window)
+{
+    NSWindow* w = nativeWindow(window);
+    NSButton* zoom = [w standardWindowButton:NSWindowZoomButton];
+    if (!w || !zoom)
+        return QMargins(72, 32, 0, 0);
+    const int height = int(w.frame.size.height - w.contentLayoutRect.size.height);
+    return QMargins(int(NSMaxX(zoom.frame)), height, 0, 0);
+}
 
 bool setupGlassBackground(QWidget* window)
 {

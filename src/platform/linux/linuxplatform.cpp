@@ -44,11 +44,10 @@ xcb_atom_t internAtom(xcb_connection_t* conn, const char* name)
     return atom;
 }
 
-// KWin 在 X11 下支持窗口背景模糊：给窗口设 _KDE_NET_WM_BLUR_BEHIND_REGION（空区域 = 整个窗口）。
-// 只在合成器开着时有效，否则透明窗口会直接露出后面的内容
-bool kdeBlurAvailable(xcb_connection_t* conn)
+// X11 下有合成器时透明窗口才真的透明，否则会露出黑底
+bool compositorRunning(xcb_connection_t* conn)
 {
-    if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"), Qt::CaseInsensitive))
+    if (!conn)
         return false;
     const xcb_atom_t cm = internAtom(conn, "_NET_WM_CM_S0");
     xcb_get_selection_owner_reply_t* owner = xcb_get_selection_owner_reply(conn, xcb_get_selection_owner(conn, cm), nullptr);
@@ -57,6 +56,13 @@ bool kdeBlurAvailable(xcb_connection_t* conn)
     return composited;
 }
 
+bool kdeBlurAvailable(xcb_connection_t* conn)
+{
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"), Qt::CaseInsensitive)
+           && compositorRunning(conn);
+}
+
+// KWin 在 X11 下支持窗口背景模糊：给窗口设 _KDE_NET_WM_BLUR_BEHIND_REGION（空区域 = 整个窗口）
 class KdeBlurFilter : public QObject {
 public:
     using QObject::QObject;
@@ -153,6 +159,20 @@ bool setupGlassBackground(QWidget* window)
     window->setAttribute(Qt::WA_TranslucentBackground);
     window->installEventFilter(new KdeBlurFilter(window));
     return true;
+}
+
+TitleBarMode setupMergedTitleBar(QWidget* window)
+{
+    // 没有系统级的“标题栏并进内容”，改成无边框窗口。有合成器（Wayland 总有）时背景透明，窗口自己画圆角
+    window->setWindowFlag(Qt::FramelessWindowHint);
+    if (isWayland() || compositorRunning(x11Connection()))
+        window->setAttribute(Qt::WA_TranslucentBackground);
+    return TitleBarMode::OwnFrame;
+}
+
+QMargins titleBarInsets(QWidget* window)
+{
+    return QMargins(0, window->fontMetrics().height() + 18, 0, 0);
 }
 
 bool scrollCaptureSupported()

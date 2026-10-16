@@ -36,6 +36,8 @@ Platform createPlatform()
 
 void setupFloatingWindow(QWidget*, FloatingLayer) {}
 bool setupGlassBackground(QWidget*) { return false; }
+TitleBarMode setupMergedTitleBar(QWidget*) { return TitleBarMode::Native; }
+QMargins titleBarInsets(QWidget*) { return {}; }
 
 bool scrollCaptureSupported() { return true; }
 bool autostartSupported() { return false; }

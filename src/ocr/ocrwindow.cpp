@@ -11,11 +11,14 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QWindow>
 
 namespace {
 // 查找面板打开时在文字上方留出一条，面板放在那里，不挡住文字
@@ -23,6 +26,19 @@ class FindTextEdit : public QPlainTextEdit {
 public:
     using QPlainTextEdit::QPlainTextEdit;
     using QPlainTextEdit::setViewportMargins;
+};
+
+// 并进窗口的标题行：按住拖动窗口
+class TitleBar : public QWidget {
+public:
+    using QWidget::QWidget;
+
+protected:
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        if (e->button() == Qt::LeftButton && window()->windowHandle())
+            window()->windowHandle()->startSystemMove();
+    }
 };
 } // namespace
 
@@ -43,6 +59,32 @@ OcrWindow::OcrWindow()
     // 与贴图同一层，从贴图识别时结果窗口不会被贴图挡住
     setupFloatingWindow(this, FloatingLayer::Pin);
     m_glass = setupGlassBackground(this);
+    m_titleMode = setupMergedTitleBar(this);
+    if (m_titleMode == TitleBarMode::OwnTitle || m_titleMode == TitleBarMode::OwnFrame) {
+        setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false); // 标题行自己避开红绿灯
+        m_titleBar = new TitleBar(this);
+        m_titleLabel = new QLabel(tr("识别文字"), m_titleBar);
+        QFont font = m_titleLabel->font();
+        font.setBold(true);
+        m_titleLabel->setFont(font);
+        auto* titleLayout = new QHBoxLayout(m_titleBar);
+        titleLayout->setContentsMargins(0, 0, 0, 0);
+        titleLayout->addWidget(m_titleLabel);
+        titleLayout->addStretch();
+        if (m_titleMode == TitleBarMode::OwnFrame) {
+            // 无边框窗口：自己画关闭按钮，边缘可拖动缩放
+            auto* closeTitleButton = new QToolButton(m_titleBar);
+            closeTitleButton->setText(QStringLiteral("✕"));
+            closeTitleButton->setToolTip(tr("关闭"));
+            closeTitleButton->setFocusPolicy(Qt::NoFocus);
+            closeTitleButton->setStyleSheet(QStringLiteral(
+                "QToolButton { border: none; border-radius: 6px; padding: 2px 8px; }"
+                "QToolButton:hover { background: #e81123; color: white; }"));
+            connect(closeTitleButton, &QToolButton::clicked, this, &QWidget::close);
+            titleLayout->addWidget(closeTitleButton);
+            setMouseTracking(true);
+        }
+    }
 
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse); // 安装命令可以直接选中复制
@@ -148,6 +190,12 @@ OcrWindow::OcrWindow()
                                           replaceAction->shortcut().toString(QKeySequence::NativeText));
 
     auto* layout = new QVBoxLayout(this);
+    if (m_titleBar) {
+        QMargins margins = layout->contentsMargins();
+        margins.setTop(0);
+        layout->setContentsMargins(margins);
+        layout->addWidget(m_titleBar);
+    }
     layout->addWidget(m_status);
     layout->addWidget(m_edit, 1);
     layout->addLayout(buttons);
@@ -187,8 +235,10 @@ void OcrWindow::applyColors()
 
 void OcrWindow::changeEvent(QEvent* e)
 {
-    if (e->type() == QEvent::ApplicationPaletteChange)
+    if (e->type() == QEvent::ApplicationPaletteChange) {
         applyColors();
+        update();
+    }
     QWidget::changeEvent(e);
 }
 
@@ -361,6 +411,78 @@ bool OcrWindow::eventFilter(QObject* watched, QEvent* e)
     if (watched == m_edit && (e->type() == QEvent::Resize || e->type() == QEvent::Move))
         placeFindBar();
     return QWidget::eventFilter(watched, e);
+}
+
+void OcrWindow::showEvent(QShowEvent* e)
+{
+    // 标题行与系统标题栏同高，文字排在红绿灯右边
+    if (m_titleBar) {
+        const QMargins insets = titleBarInsets(this);
+        m_titleBar->setFixedHeight(insets.top());
+        m_titleLabel->setContentsMargins(qMax(2, insets.left() + 10 - layout()->contentsMargins().left()), 0, 0, 0);
+    }
+    QWidget::showEvent(e);
+}
+
+// 无边框窗口（Linux）自己画背景：能透明时是圆角，毛玻璃下只留淡淡的底色
+void OcrWindow::paintEvent(QPaintEvent* e)
+{
+    if (m_titleMode != TitleBarMode::OwnFrame)
+        return QWidget::paintEvent(e);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    QColor fill = palette().color(QPalette::Window);
+    if (m_glass)
+        fill.setAlpha(170);
+    QColor border = palette().color(QPalette::Text);
+    border.setAlpha(50);
+    p.setPen(border);
+    p.setBrush(fill);
+    const qreal radius = testAttribute(Qt::WA_TranslucentBackground) ? 10 : 0;
+    p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+}
+
+Qt::Edges OcrWindow::resizeEdges(const QPoint& pos) const
+{
+    constexpr int kGrip = 6;
+    Qt::Edges edges;
+    if (m_titleMode != TitleBarMode::OwnFrame)
+        return edges;
+    if (pos.x() < kGrip)
+        edges |= Qt::LeftEdge;
+    if (pos.x() >= width() - kGrip)
+        edges |= Qt::RightEdge;
+    if (pos.y() < kGrip)
+        edges |= Qt::TopEdge;
+    if (pos.y() >= height() - kGrip)
+        edges |= Qt::BottomEdge;
+    return edges;
+}
+
+void OcrWindow::mouseMoveEvent(QMouseEvent* e)
+{
+    const Qt::Edges edges = resizeEdges(e->position().toPoint());
+    if (edges == (Qt::LeftEdge | Qt::TopEdge) || edges == (Qt::RightEdge | Qt::BottomEdge))
+        setCursor(Qt::SizeFDiagCursor);
+    else if (edges == (Qt::RightEdge | Qt::TopEdge) || edges == (Qt::LeftEdge | Qt::BottomEdge))
+        setCursor(Qt::SizeBDiagCursor);
+    else if (edges & (Qt::LeftEdge | Qt::RightEdge))
+        setCursor(Qt::SizeHorCursor);
+    else if (edges)
+        setCursor(Qt::SizeVerCursor);
+    else
+        unsetCursor();
+    QWidget::mouseMoveEvent(e);
+}
+
+void OcrWindow::mousePressEvent(QMouseEvent* e)
+{
+    const Qt::Edges edges = resizeEdges(e->position().toPoint());
+    if (e->button() == Qt::LeftButton && edges && windowHandle()) {
+        windowHandle()->startSystemResize(edges);
+        return;
+    }
+    QWidget::mousePressEvent(e);
 }
 
 void OcrWindow::keyPressEvent(QKeyEvent* e)

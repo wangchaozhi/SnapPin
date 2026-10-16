@@ -79,6 +79,20 @@ bool setupGlassBackground(QWidget* window)
     return true;
 }
 
+TitleBarMode setupMergedTitleBar(QWidget* window)
+{
+    // Qt 6.9 起在客户区里画标题、窗口按钮并处理拖动；毛玻璃下标题栏不画底色，透出亚克力
+    window->setWindowFlag(Qt::ExpandedClientAreaHint);
+    if (window->testAttribute(Qt::WA_TranslucentBackground))
+        window->setWindowFlag(Qt::NoTitleBarBackgroundHint);
+    return TitleBarMode::SystemDrawn;
+}
+
+QMargins titleBarInsets(QWidget*)
+{
+    return {};
+}
+
 bool scrollCaptureSupported()
 {
     return true;

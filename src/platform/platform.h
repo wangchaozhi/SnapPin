@@ -2,6 +2,7 @@
 
 #include <QKeySequence>
 #include <QList>
+#include <QMargins>
 #include <QObject>
 #include <QPixmap>
 #include <QRect>
@@ -97,6 +98,17 @@ void setupFloatingWindow(QWidget* window, FloatingLayer layer);
 // 窗口背景换成系统的毛玻璃（macOS 26 起是液态玻璃）。在窗口构造时调用；不支持的平台返回 false，窗口保持原样。
 // 返回 true 时窗口背景透明，调用方要把自己的控件背景也调成半透明
 bool setupGlassBackground(QWidget* window);
+
+// 把原生标题栏并进窗口内容，与（毛玻璃）背景连成一片。在窗口构造时调用，在 setupGlassBackground 之后
+enum class TitleBarMode {
+    Native,      // 保留原生标题栏
+    SystemDrawn, // 标题栏并进内容区，标题和窗口按钮仍由系统 / Qt 画（Windows），内容按安全区域避开
+    OwnTitle,    // 系统只保留窗口按钮（macOS 红绿灯），标题行由窗口自己画，可拖动
+    OwnFrame,    // 无边框（Linux）：标题行、关闭按钮、圆角背景和边缘缩放都由窗口自己处理
+};
+TitleBarMode setupMergedTitleBar(QWidget* window);
+// OwnTitle / OwnFrame：标题行高度（top）和左边系统按钮占的宽度（left），窗口显示后才准确
+QMargins titleBarInsets(QWidget* window);
 
 // 长截图：边框和面板要摆在选区周围，还要每 50ms 截一次屏。Wayland 下两者都做不到
 bool scrollCaptureSupported();

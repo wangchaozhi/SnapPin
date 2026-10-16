@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/platform.h"
 #include "textrecognizer.h"
 
 #include <QWidget>
@@ -20,6 +21,10 @@ public:
     void setResult(const OcrResult& result);
 
 protected:
+    void showEvent(QShowEvent* e) override;
+    void paintEvent(QPaintEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void mousePressEvent(QMouseEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     bool eventFilter(QObject* watched, QEvent* e) override;
     void changeEvent(QEvent* e) override;
@@ -28,6 +33,7 @@ private:
     void copyAll();
     void setStatus(const QString& text, bool warning);
     void applyColors();
+    Qt::Edges resizeEdges(const QPoint& pos) const; // 无边框窗口：鼠标所在的可缩放边缘
     void showFindBar(bool replace);
     void hideFindBar();
     void placeFindBar();
@@ -36,6 +42,9 @@ private:
     void replaceAll();
     void updateMatches(); // 高亮所有匹配并显示数量
 
+    TitleBarMode m_titleMode = TitleBarMode::Native;
+    QWidget* m_titleBar = nullptr; // 窗口自己画的标题行（macOS、Linux）；否则为空
+    QLabel* m_titleLabel = nullptr;
     QLabel* m_status;
     QPlainTextEdit* m_edit;
     QFrame* m_findBar; // 盖在文本框顶部，不占布局
