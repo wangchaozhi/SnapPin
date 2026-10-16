@@ -134,5 +134,37 @@ int main(int argc, char** argv)
     // 渐变壁纸不会被切成一条条，空白处框的是任务栏以上的整块桌面
     const QRect wall = w.elementAt({500, 300}, desk.rect());
     check("wallpaper not cut into bands", wall.top() <= 2 && wall.bottom() >= 548 && wall.bottom() <= 553 && wall.width() >= 990, wall);
+
+    // 桌面图标：一列图标，每个下面隔 14 像素是居中的两行文字，上一个的文字到下一个图标隔 30 像素
+    QImage icons(600, 500, QImage::Format_RGB32);
+    QPainter n(&icons);
+    QLinearGradient sky(0, 0, 0, 500);
+    sky.setColorAt(0, QColor(30, 80, 150));
+    sky.setColorAt(1, QColor(90, 150, 210));
+    n.fillRect(icons.rect(), sky);
+    for (const int top : {20, 160, 300}) {
+        n.fillRect(50, top, 60, 60, QColor(0xF0, 0xC0, 0x40));     // 图标 50..109
+        n.fillRect(40, top + 74, 80, 12, Qt::white);                // 第一行文字 40..119
+        n.fillRect(55, top + 89, 50, 12, Qt::white);                // 第二行文字 55..104
+    }
+    n.end();
+    ImageRegionDetector m(icons);
+    for (const int top : {20, 160, 300}) {
+        const QRect item(QPoint(40, top), QPoint(119, top + 100));
+        const QRect onIcon = m.elementAt({80, top + 30}, icons.rect());
+        const QRect onLabel = m.elementAt({80, top + 80}, icons.rect());
+        check("desktop icon includes label", onIcon.contains(item) && onIcon.height() < 115, onIcon);
+        check("desktop label includes icon", onLabel.contains(item) && onLabel.height() < 115, onLabel);
+    }
+    // 左对齐的两段文字（不是图标和说明）不合并
+    QImage list(400, 200, QImage::Format_RGB32);
+    list.fill(Qt::white);
+    QPainter l(&list);
+    l.fillRect(20, 20, 200, 10, Qt::black);
+    l.fillRect(20, 50, 120, 10, Qt::black);
+    l.end();
+    ImageRegionDetector lt(list);
+    const QRect line = lt.elementAt({60, 25}, list.rect());
+    check("left-aligned lines not merged", line.bottom() < 40, line);
     return failures ? 1 : 0;
 }

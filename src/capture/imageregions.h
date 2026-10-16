@@ -36,7 +36,14 @@ private:
     bool background(bool row, int i, const QRect& r, QRgb& color) const;
     // 包含 at 的、底色相同的连续行（rows）/ 列
     void backgroundRun(bool rows, const QRect& r, int at, int& start, int& end) const;
-    QRect contentBlock(const QPoint& p, const QRect& container) const;
+    // isRegion：结果是光标所在的底色区域（光标在空白处），不是内容块
+    QRect contentBlock(const QPoint& p, const QRect& container, bool* isRegion = nullptr) const;
+    // 从 p 出发把附近的边缘连成一团（上下连得远、左右连得近），返回这一团的范围；太大或 p 附近没有边缘时返回空
+    QRect componentAt(const QPoint& p) const;
+    // rx / ry：左右 / 上下最多隔多远还算连着；sat：用哪种边缘（全部 / 只用强边缘）
+    QRect componentAt(const QPoint& p, int rx, int ry, const std::vector<uint32_t>& sat) const;
+    // 把正上方 / 正下方居中对齐的说明文字（或图标）并进来
+    QRect withCaption(const QRect& block, const QRect& container) const;
     // 第 y 行的 [x0, x1] / 第 x 列的 [y0, y1] 里有没有内容（见构造函数里的说明）
     bool rowHasContent(int y, int x0, int x1) const;
     bool colHasContent(int x, int y0, int y1) const;
@@ -47,4 +54,5 @@ private:
     int m_gap;
     std::vector<uint8_t> m_h, m_v;
     std::vector<uint16_t> m_rowPre, m_colPre; // 每行 / 每列的内容前缀和
+    std::vector<uint32_t> m_edgeSat, m_strongSat; // 短边缘 / 短的强边缘的积分图，(w+1)×(h+1)
 };

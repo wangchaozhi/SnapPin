@@ -5,13 +5,16 @@
 namespace {
 
 constexpr int kEdgeThreshold = 30; // 相邻像素 RGB 差值之和超过它算边缘（浅灰边框 #E0E0E0 对白底约 93）
+constexpr int kStrongEdge = 60;    // 局部连成一团时只用比这更强的边缘
 constexpr int kGap = 2;            // 边缘线允许的断点
 constexpr int kMaxExpand = 24;     // 某条边不闭合时向外找下一条线的次数上限
 constexpr int kLongLine = 64;      // 这么长的直边缘算长线（输入框、色块的边）
 constexpr int kHugeLine = 256;     // 这么长的算结构线（窗口边框、贯穿的分界线）
 constexpr int kMaxPillHeight = 96; // 胶囊形（两端是半圆，没有竖边）的输入框、按钮最高多少
 constexpr int kMinPillLine = 48;   // 胶囊上下边至少这么长
-constexpr int kBgSamples = 15;     // 判断一行 / 一列的底色时取多少个采样点
+constexpr int kBgSamples = 15;
+constexpr int kMaxComponentGaps = 15; // 局部连成的一团最大多少个 blockGap 宽 / 高（一个桌面图标连文字约 12 个），再大多半是顺着壁纸的线条连到了旁边
+constexpr int kMaxSeedReach = 40;  // 光标在图标内部纯色上时，四周多远内有边缘算被围住     // 判断一行 / 一列的底色时取多少个采样点
 
 inline int colorDiff(QRgb a, QRgb b)
 {
@@ -36,11 +39,16 @@ ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength,
         const auto* next = y + 1 < m_h0 ? reinterpret_cast<const QRgb*>(img.constScanLine(y + 1)) : nullptr;
         uint8_t* h = &m_h[size_t(y) * size_t(m_w)];
         uint8_t* v = &m_v[size_t(y) * size_t(m_w)];
+        // 1 = 边缘，2 = 强边缘（componentAt 只用强边缘连接，壁纸里柔和的线条不会把图标连到一起）
         for (int x = 0; x < m_w; ++x) {
-            if (next && colorDiff(row[x], next[x]) > kEdgeThreshold)
-                h[x] = 1;
-            if (x + 1 < m_w && colorDiff(row[x], row[x + 1]) > kEdgeThreshold)
-                v[x] = 1;
+            if (next) {
+                const int d = colorDiff(row[x], next[x]);
+                h[x] = d > kStrongEdge ? 2 : d > kEdgeThreshold ? 1 : 0;
+            }
+            if (x + 1 < m_w) {
+                const int d = colorDiff(row[x], row[x + 1]);
+                v[x] = d > kStrongEdge ? 2 : d > kEdgeThreshold ? 1 : 0;
+            }
         }
     }
 
@@ -91,6 +99,22 @@ ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength,
             pre[x + 1] = uint16_t(pre[x] + ((hClass[i] == 1 || vClass[i] == 1 || vClass[i] == 2) ? 1 : 0));
         }
     }
+    // 短边缘（不属于长直线）和其中强边缘的积分图，componentAt 用它 O(1) 判断某个小矩形里有没有边缘。
+    // 长直线（选中高亮框、分界线）不参与连接，否则会把相邻的图标连在一起
+    const size_t stride = size_t(m_w) + 1;
+    m_edgeSat.assign(stride * (size_t(m_h0) + 1), 0);
+    m_strongSat.assign(stride * (size_t(m_h0) + 1), 0);
+    for (int y = 0; y < m_h0; ++y) {
+        uint32_t rowSum = 0, strongSum = 0;
+        for (int x = 0; x < m_w; ++x) {
+            const size_t i = size_t(y) * size_t(m_w) + size_t(x);
+            rowSum += (hClass[i] == 1 || vClass[i] == 1) ? 1 : 0;
+            strongSum += ((hClass[i] == 1 && m_h[i] == 2) || (vClass[i] == 1 && m_v[i] == 2)) ? 1 : 0;
+            const size_t o = (size_t(y) + 1) * stride + size_t(x) + 1;
+            m_edgeSat[o] = m_edgeSat[o - stride] + rowSum;
+            m_strongSat[o] = m_strongSat[o - stride] + strongSum;
+        }
+    }
     for (int x = 0; x < m_w; ++x) {
         uint16_t* pre = &m_colPre[size_t(x) * size_t(m_h0 + 1)];
         for (int y = 0; y < m_h0; ++y) {
@@ -98,6 +122,94 @@ ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength,
             pre[y + 1] = uint16_t(pre[y] + ((vClass[i] == 1 || hClass[i] == 1 || hClass[i] == 2) ? 1 : 0));
         }
     }
+}
+
+QRect ImageRegionDetector::componentAt(const QPoint& p) const
+{
+    // 先用所有边缘、正常的连接距离；连进壁纸细节（太大）时改成只用强边缘（壁纸里柔和的线条不算），
+    // 再不行就收紧连接距离
+    const int rx = qMax(1, m_gap / 4), ry = qMax(2, m_gap / 2);
+    QRect r = componentAt(p, rx, ry, m_edgeSat);
+    if (r.isEmpty())
+        r = componentAt(p, rx, ry, m_strongSat);
+    if (r.isEmpty())
+        r = componentAt(p, 1, qMax(2, m_gap / 4), m_strongSat);
+    return r;
+}
+
+QRect ImageRegionDetector::componentAt(const QPoint& p, int rx, int ry, const std::vector<uint32_t>& sat) const
+{
+    // 从光标出发，把附近的边缘像素连成一团：上下连得远（图标和下面的文字、多行文字），左右连得近
+    // （同一个词里的字，但不连到旁边图标的文字）。连成的这一团就是光标下的元素。
+    // 在细节很多的壁纸上会越连越大，超过上限就放弃
+    auto edgesIn = [&](int x0, int y0, int x1, int y1) {
+        x0 = qMax(0, x0);
+        y0 = qMax(0, y0);
+        x1 = qMin(m_w - 1, x1);
+        y1 = qMin(m_h0 - 1, y1);
+        const size_t stride = size_t(m_w) + 1;
+        auto at = [&](int x, int y) { return sat[size_t(y) * stride + size_t(x)]; };
+        return at(x1 + 1, y1 + 1) - at(x0, y1 + 1) - at(x1 + 1, y0) + at(x0, y0);
+    };
+    // 只沿水平、竖直方向连（十字形），不斜着连：密排的桌面图标里，旁边居中的长文字会斜着挨到这边的文字
+    auto on = [&](int x, int y) { return edgesIn(x - rx, y, x + rx, y) > 0 || edgesIn(x, y - ry, x, y + ry) > 0; };
+    // 光标在图标内部一片纯色上时附近没有边缘：四个方向不远处都有边缘（被围住）就从最近的那个出发
+    QPoint seed = p;
+    if (!on(p.x(), p.y())) {
+        int best = kMaxSeedReach + 1;
+        for (const QPoint d : {QPoint(1, 0), QPoint(-1, 0), QPoint(0, 1), QPoint(0, -1)}) {
+            int dist = 1;
+            QPoint q = p + d;
+            for (; dist <= kMaxSeedReach && q.x() >= 0 && q.y() >= 0 && q.x() < m_w && q.y() < m_h0; ++dist, q += d)
+                if (on(q.x(), q.y()))
+                    break;
+            if (dist > kMaxSeedReach || q.x() < 0 || q.y() < 0 || q.x() >= m_w || q.y() >= m_h0)
+                return {}; // 有一个方向是开着的：光标在空白处
+            if (dist < best) {
+                best = dist;
+                seed = q;
+            }
+        }
+    }
+
+    const int maxW = kMaxComponentGaps * m_gap, maxH = kMaxComponentGaps * m_gap;
+    const QRect window = QRect(p.x() - maxW, p.y() - maxH, 2 * maxW + 1, 2 * maxH + 1)
+                         & QRect(0, 0, m_w, m_h0);
+    std::vector<uint8_t> seen(size_t(window.width()) * size_t(window.height()), 0);
+    auto mark = [&](int x, int y) -> bool {
+        uint8_t& s = seen[size_t(y - window.top()) * size_t(window.width()) + size_t(x - window.left())];
+        if (s)
+            return false;
+        s = 1;
+        return true;
+    };
+    std::vector<QPoint> stack{seed};
+    mark(seed.x(), seed.y());
+    int x0 = m_w, y0 = m_h0, x1 = -1, y1 = -1; // 真正的边缘像素的范围
+    while (!stack.empty()) {
+        const QPoint q = stack.back();
+        stack.pop_back();
+        if (edgesIn(q.x(), q.y(), q.x(), q.y()) > 0) {
+            x0 = qMin(x0, q.x());
+            y0 = qMin(y0, q.y());
+            x1 = qMax(x1, q.x());
+            y1 = qMax(y1, q.y());
+            if (x1 - x0 > maxW || y1 - y0 > maxH)
+                return {};
+        }
+        for (const QPoint d : {QPoint(1, 0), QPoint(-1, 0), QPoint(0, 1), QPoint(0, -1)}) {
+            const QPoint n = q + d;
+            if (!window.contains(n))
+                return {}; // 碰到搜索窗口边缘：太大了
+            if (on(n.x(), n.y()) && mark(n.x(), n.y()))
+                stack.push_back(n);
+        }
+    }
+    if (x1 < 0)
+        return {};
+    // 边缘在像素和它右边 / 下边那个像素之间，再留两像素边距
+    const QRect r = QRect(QPoint(x0 - 1, y0 - 1), QPoint(x1 + 3, y1 + 3)) & QRect(0, 0, m_w, m_h0);
+    return r.width() >= m_minLen / 2 && r.height() >= m_minLen / 2 ? r : QRect();
 }
 
 bool ImageRegionDetector::rowHasContent(int y, int x0, int x1) const
@@ -376,8 +488,10 @@ void ImageRegionDetector::backgroundRun(bool rows, const QRect& r, int at, int& 
     }
 }
 
-QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container) const
+QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container, bool* isRegion) const
 {
+    if (isRegion)
+        *isRegion = false;
     // 递归 XY 切分：交替按行、按列切，每次留下光标所在的那一段，直到切不动为止。两种切法：
     // 1. 底色变了：标签栏里白色的当前标签、桌面上的任务栏、侧边栏……底色不同的一段自成一个区域
     // 2. 空白：区域里按足够宽的空白把文字段落、图标切成内容块
@@ -433,7 +547,11 @@ QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container)
             }
             // 光标落在空白里：是底色区域本身（有的话），不是某个内容块
             if (segStart < 0 || at > segEnd + 1)
+            {
+                if (isRegion)
+                    *isRegion = !region.isEmpty();
                 return region.isEmpty() ? QRect() : (region & container);
+            }
             // 这一段之外还有别的内容，才说明真的把它和旁边的东西分开了（只是去掉空白边距不算）
             for (int i = from; i <= to && !split; ++i)
                 if ((i < segStart || i > segEnd) && filled(i))
@@ -454,6 +572,52 @@ QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container)
     return r.adjusted(-2, -2, 2, 2) & container;
 }
 
+QRect ImageRegionDetector::withCaption(const QRect& block, const QRect& container) const
+{
+    // 图标和下面的文字（桌面图标、宫格里的应用）间距比字间距大，会被切成两块。
+    // 正上方 / 正下方不远处有一块和它居中对齐的，就并成一个；上下都有时只并近的那个
+    // （桌面图标排成一列时，图标上面是上一个图标的文字，下面才是自己的）
+    const int reach = 3 * m_gap;
+    auto neighbour = [&](int dir, int& gap) -> QRect {
+        const int x0 = qMax(container.left(), block.left());
+        const int x1 = qMin(container.right(), block.right());
+        const int yStart = dir > 0 ? block.bottom() + 1 : block.top() - 1;
+        for (int y = yStart, d = 0; d <= reach && y >= container.top() && y <= container.bottom(); y += dir, ++d) {
+            if (!rowHasContent(y, x0, x1))
+                continue;
+            // 这一行里离中线最近的内容像素，从它找所在的块
+            const int cx = (x0 + x1) / 2;
+            for (int off = 0; off <= (x1 - x0) / 2 + 1; ++off) {
+                for (const int x : {cx - off, cx + off}) {
+                    if (x < x0 || x > x1 || !colHasContent(x, y, y))
+                        continue;
+                    bool region = false;
+                    const QRect other = contentBlock(QPoint(x, y), container, &region);
+                    if (other.isEmpty() || region || other.intersects(block))
+                        return {};
+                    // 居中对齐，而且不比自己宽太多（不是旁边一整段文字）
+                    const int dc = qAbs((other.left() + other.right()) - (block.left() + block.right())) / 2;
+                    if (dc > qMax(3, qMin(other.width(), block.width()) / 20) || other.width() > 3 * block.width()
+                        || block.width() > 3 * other.width())
+                        return {};
+                    gap = d;
+                    return other;
+                }
+            }
+            return {};
+        }
+        return {};
+    };
+    int gapDown = 0, gapUp = 0;
+    const QRect down = neighbour(1, gapDown);
+    const QRect up = neighbour(-1, gapUp);
+    if (!down.isEmpty() && (up.isEmpty() || gapDown <= gapUp))
+        return block | down;
+    if (!up.isEmpty())
+        return block | up;
+    return block;
+}
+
 QRect ImageRegionDetector::elementAt(const QPoint& p, const QRect& bounds) const
 {
     const QRect area = bounds & QRect(0, 0, m_w, m_h0);
@@ -466,8 +630,24 @@ QRect ImageRegionDetector::elementAt(const QPoint& p, const QRect& bounds) const
         if (c.contains(p) && qint64(c.width()) * c.height() < qint64(container.width()) * container.height())
             container = c;
     }
-    const QRect block = contentBlock(p, container);
+    // 从光标处局部地把附近的边缘连成一团。带边框的小块（实心方形的图标）连同下面的文字连成了一团时取这一团：
+    // 这一团要把整个边框块包在里面（按钮里的文字连成的团在按钮里面，不会代替按钮）
+    const QRect comp = componentAt(p) & area;
+    auto reachesBeyond = [&](const QRect& inner) {
+        const int m = qMax(2, m_gap / 2);
+        return comp.left() < inner.left() - m || comp.top() < inner.top() - m || comp.right() > inner.right() + m
+               || comp.bottom() > inner.bottom() + m;
+    };
+    // 只多出几像素的边距不算（那就是这个边框块本身）
+    if (container != area && comp.contains(p) && comp.contains(container.adjusted(2, 2, -2, -2)) && reachesBeyond(container))
+        return comp;
+    bool isRegion = false;
+    const QRect block = contentBlock(p, container, &isRegion);
     if (!block.isEmpty())
-        return block;
-    return container == area ? QRect() : container;
+        return isRegion ? block : withCaption(block, container);
+    // 按整行整列切不开（密密排列的桌面图标、细节多的背景上，每一行每一列都有东西）：用连成的那一团
+    if (container == area && comp.contains(p))
+        return comp;
+    // 边框围成的小块（比如实心的图标）也可能带说明文字
+    return container == area ? QRect() : withCaption(container, area);
 }
