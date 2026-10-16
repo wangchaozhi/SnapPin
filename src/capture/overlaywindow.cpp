@@ -12,6 +12,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QWheelEvent>
+#include <algorithm>
 
 namespace {
 constexpr int kMagnifierCells = 17; // 放大区域：17×17 物理像素
@@ -20,6 +21,7 @@ constexpr int kWidthHintMs = 900;   // 滚轮调粗细后，光标处的粗细�
 constexpr qreal kMinWidth = 1;
 constexpr qreal kMaxWidth = 30;
 constexpr int kRegionHistoryMax = 20;
+constexpr int kSnapDistance = 5; // 拖动选区边时，离窗口 / 控件边缘这么近就吸附过去（逻辑像素）
 const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
 bool g_colorHex = false; // 放大镜颜色显示 / 复制格式：HEX 或 RGB，本次运行内记住
@@ -167,6 +169,52 @@ QRect OverlayWindow::windowAt(const QPoint& pos) const
         }
     }
     return group < 0 ? rect() : (best & rect());
+}
+
+int OverlayWindow::snap(int value, Qt::Orientation o, bool farEdge, const QPoint& near) const
+{
+    // 按住 Alt 暂时不吸附
+    if (QGuiApplication::queryKeyboardModifiers() & Qt::AltModifier)
+        return value;
+
+    // 候选边：没被更上层窗口完全盖住的顶层窗口 + 光标所在窗口里的控件 + 屏幕边缘。
+    // 选区的右 / 下边是包含在内的坐标，所以远边吸到“窗口右边”或“紧挨着另一个窗口左边之前”
+    const bool horizontal = o == Qt::Horizontal;
+    int best = value;
+    int bestDist = kSnapDistance + 1;
+    auto consider = [&](const QRect& r) {
+        const int a = horizontal ? (farEdge ? r.right() : r.left()) : (farEdge ? r.bottom() : r.top());
+        const int b = horizontal ? (farEdge ? r.left() - 1 : r.right() + 1) : (farEdge ? r.top() - 1 : r.bottom() + 1);
+        for (const int c : {a, b}) {
+            const int d = qAbs(c - value);
+            if (d < bestDist) {
+                bestDist = d;
+                best = c;
+            }
+        }
+    };
+    consider(rect());
+
+    int nearGroup = -1;
+    for (const DetectedWindow& w : m_windows) {
+        if (!w.isChild && w.rect.contains(near)) {
+            nearGroup = w.group;
+            break;
+        }
+    }
+    QList<QRect> above; // 已经遍历过的更上层顶层窗口
+    for (const DetectedWindow& w : m_windows) {
+        if (w.isChild) {
+            if (w.group == nearGroup)
+                consider(w.rect);
+            continue;
+        }
+        const bool covered = std::any_of(above.cbegin(), above.cend(), [&](const QRect& a) { return a.contains(w.rect); });
+        if (!covered)
+            consider(w.rect);
+        above.append(w.rect);
+    }
+    return best;
 }
 
 void OverlayWindow::setHover(const QRect& r)

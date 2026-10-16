@@ -83,6 +83,9 @@ private:
     DWORD m_threadId = 0;
 };
 
+// 看不见也点不到的覆盖层窗口（透明度为 0，或铺满整屏的逐像素透明工具窗口），窗口识别与滚轮接管都应跳过
+bool isInvisibleOverlayWindow(HWND hwnd);
+
 // 屏幕在虚拟桌面中的物理像素矩形（进程为 Per-Monitor DPI Aware V2，Win32 坐标即物理像素）
 QRect physicalScreenRect(QScreen* screen);
 HMONITOR monitorHandle(QScreen* screen);

@@ -113,9 +113,14 @@ void SelectingState::mousePress(QMouseEvent* e)
 void SelectingState::mouseMove(QMouseEvent* e)
 {
     const QPoint pos = e->position().toPoint();
-    // 包含光标所在像素
-    QRect r = QRect(m_anchor, pos).normalized();
-    r.setSize(r.size() + QSize(1, 1));
+    // 起点和光标两侧的边都吸附到附近的窗口 / 控件边缘（包含光标所在像素）
+    const bool right = pos.x() >= m_anchor.x();
+    const bool down = pos.y() >= m_anchor.y();
+    const int ax = w->snap(m_anchor.x(), Qt::Horizontal, !right, pos);
+    const int ay = w->snap(m_anchor.y(), Qt::Vertical, !down, pos);
+    const int px = w->snap(pos.x(), Qt::Horizontal, right, pos);
+    const int py = w->snap(pos.y(), Qt::Vertical, down, pos);
+    QRect r = QRect(QPoint(ax, ay), QPoint(px, py)).normalized();
     w->setSelection(r & w->rect());
 }
 
@@ -234,6 +239,15 @@ void AdjustingState::mouseMove(QMouseEvent* e)
         case 7: l += d.x(); b += d.y(); break;
         case 8: l += d.x(); break;
         }
+        // 拖动的边吸附到附近的窗口 / 控件边缘
+        if (m_drag == 1 || m_drag == 7 || m_drag == 8)
+            l = w->snap(l, Qt::Horizontal, false, pos);
+        if (m_drag == 3 || m_drag == 4 || m_drag == 5)
+            rt = w->snap(rt, Qt::Horizontal, true, pos);
+        if (m_drag == 1 || m_drag == 2 || m_drag == 3)
+            t = w->snap(t, Qt::Vertical, false, pos);
+        if (m_drag == 5 || m_drag == 6 || m_drag == 7)
+            b = w->snap(b, Qt::Vertical, true, pos);
         r = QRect(QPoint(l, t), QPoint(rt, b)).normalized() & w->rect();
     }
     if (r.width() >= 1 && r.height() >= 1)

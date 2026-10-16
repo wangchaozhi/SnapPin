@@ -58,6 +58,8 @@ BOOL CALLBACK enumTopLevel(HWND hwnd, LPARAM lp)
         return TRUE;
     if (GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT) // 鼠标穿透的覆盖层不参与识别
         return TRUE;
+    if (isInvisibleOverlayWindow(hwnd))
+        return TRUE;
     const QRect r = windowRect(hwnd, true);
     if (r.width() < 4 || r.height() < 4)
         return TRUE;
@@ -86,6 +88,32 @@ bool isOwnWindow(HWND hwnd)
 }
 
 } // namespace
+
+bool isInvisibleOverlayWindow(HWND hwnd)
+{
+    const LONG ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+    if (!(ex & WS_EX_LAYERED))
+        return false;
+    // 整体透明度为 0（如 NVIDIA GeForce 叠加层）
+    BYTE alpha = 255;
+    DWORD flags = 0;
+    COLORREF key = 0;
+    if (GetLayeredWindowAttributes(hwnd, &key, &alpha, &flags) && (flags & LWA_ALPHA) && alpha == 0)
+        return true;
+    // 逐像素透明的工具窗口铺满整块屏幕：几乎都是看不见也点不到的覆盖层（各种托盘程序的消息层等）。
+    // 正常的全屏程序不会是分层的工具窗口
+    if (!(ex & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)))
+        return false;
+    RECT r{};
+    if (!GetWindowRect(hwnd, &r))
+        return false;
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi))
+        return false;
+    const RECT& m = mi.rcMonitor;
+    return r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom;
+}
 
 QList<DetectedWindow> WinWindowFinder::windowsOnScreen(QScreen* screen)
 {

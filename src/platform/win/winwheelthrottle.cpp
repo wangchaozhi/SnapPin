@@ -115,7 +115,7 @@ BOOL CALLBACK collectWindows(HWND hwnd, LPARAM lp)
         return TRUE;
     }
     DWORD cloaked = 0;
-    if (ctx->target || clickThrough
+    if (ctx->target || clickThrough || isInvisibleOverlayWindow(hwnd)
         || (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked))
         return TRUE;
     GetWindowRect(hwnd, &r);

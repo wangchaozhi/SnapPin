@@ -25,6 +25,9 @@ public:
     // ---- 供各状态调用 ----
     void setState(std::unique_ptr<OverlayState> state);
     QRect windowAt(const QPoint& pos) const;
+    // 边缘吸附：value 是选区某条边的坐标，离附近窗口 / 控件边缘足够近时返回吸附后的坐标。
+    // farEdge 表示右 / 下边；near 用来确定光标所在的窗口（只吸附它内部的控件）
+    int snap(int value, Qt::Orientation o, bool farEdge, const QPoint& near) const;
     void setHover(const QRect& r);
     QRect selection() const { return m_selection; }
     bool hasSelection() const { return !m_selection.isEmpty(); }
