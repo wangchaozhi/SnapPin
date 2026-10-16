@@ -4,11 +4,12 @@
 
 #include <QWidget>
 
-class QCheckBox;
+class QFrame;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
+class QToolButton;
 
 // 文字识别结果：可编辑、可复制，Ctrl+F 查找、Ctrl+H（macOS ⌘⌥F）替换。先显示“正在识别”，结果回来后填入
 class OcrWindow : public QWidget {
@@ -20,25 +21,27 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* e) override;
+    bool eventFilter(QObject* watched, QEvent* e) override;
 
 private:
     void copyAll();
     void setStatus(const QString& text, bool warning);
     void showFindBar(bool replace);
     void hideFindBar();
+    void placeFindBar();
     bool findNext(bool backward);
     void replaceOne();
     void replaceAll();
     void updateMatches(); // 高亮所有匹配并显示数量
 
     QLabel* m_status;
-    QWidget* m_findBar;
-    QLineEdit* m_findEdit;
-    QWidget* m_replaceRow;
-    QLineEdit* m_replaceEdit;
-    QCheckBox* m_caseCheck;
-    QLabel* m_matchLabel;
     QPlainTextEdit* m_edit;
+    QFrame* m_findBar; // 浮在文本框右上角，不占布局
+    QLineEdit* m_findEdit;
+    QLineEdit* m_replaceEdit;
+    QList<QWidget*> m_replaceWidgets;
+    QToolButton* m_caseButton;
+    QLabel* m_matchLabel;
     QPushButton* m_copyButton;
     QString m_findHint;
 };

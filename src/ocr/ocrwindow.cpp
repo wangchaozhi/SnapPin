@@ -3,8 +3,9 @@
 #include "platform/platform.h"
 
 #include <QAction>
-#include <QCheckBox>
 #include <QClipboard>
+#include <QFrame>
+#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -12,19 +13,20 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 OcrWindow::OcrWindow()
     : QWidget(nullptr, Qt::Window | Qt::WindowStaysOnTopHint)
     , m_status(new QLabel(this))
-    , m_findBar(new QWidget(this))
-    , m_findEdit(new QLineEdit(m_findBar))
-    , m_replaceRow(nullptr)
-    , m_replaceEdit(new QLineEdit(m_findBar))
-    , m_caseCheck(new QCheckBox(tr("区分大小写"), m_findBar))
-    , m_matchLabel(new QLabel(m_findBar))
     , m_edit(new QPlainTextEdit(this))
+    , m_findBar(new QFrame(this))
+    , m_findEdit(new QLineEdit(m_findBar))
+    , m_replaceEdit(new QLineEdit(m_findBar))
+    , m_caseButton(new QToolButton(m_findBar))
+    , m_matchLabel(new QLabel(m_findEdit))
     , m_copyButton(new QPushButton(tr("复制全部"), this))
 {
     setWindowTitle(tr("识别文字 - SnapPin"));
@@ -48,22 +50,48 @@ OcrWindow::OcrWindow()
     buttons->addWidget(m_copyButton);
     buttons->addWidget(closeButton);
 
-    // 查找 / 替换栏：Ctrl+F、Ctrl+H 打开，Esc 收起。回车查找下一个，Shift+回车查找上一个
+    // 查找 / 替换：浮在文本框右上角的面板。Ctrl+F、Ctrl+H 打开，Esc 收起。回车查找下一个，Shift+回车查找上一个
+    m_findBar->setObjectName(QStringLiteral("findPanel"));
+    m_findBar->setStyleSheet(QStringLiteral(
+        "#findPanel { background: palette(window); border: 1px solid palette(mid); border-radius: 6px; }"));
     m_findEdit->setPlaceholderText(tr("查找"));
-    m_findEdit->setClearButtonEnabled(true);
     m_replaceEdit->setPlaceholderText(tr("替换为"));
-    m_matchLabel->setStyleSheet(QStringLiteral("color:gray;"));
-    m_matchLabel->setMinimumWidth(m_matchLabel->fontMetrics().horizontalAdvance(QStringLiteral("999/999")));
-    auto* prevButton = new QPushButton(tr("上一个"), m_findBar);
-    auto* nextButton = new QPushButton(tr("下一个"), m_findBar);
-    auto* replaceButton = new QPushButton(tr("替换"), m_findBar);
-    auto* replaceAllButton = new QPushButton(tr("全部替换"), m_findBar);
-    for (QPushButton* b : {prevButton, nextButton, replaceButton, replaceAllButton})
-        b->setAutoDefault(false); // 回车留给输入框，不触发“复制全部”
-    connect(prevButton, &QPushButton::clicked, this, [this] { findNext(true); });
-    connect(nextButton, &QPushButton::clicked, this, [this] { findNext(false); });
-    connect(replaceButton, &QPushButton::clicked, this, &OcrWindow::replaceOne);
-    connect(replaceAllButton, &QPushButton::clicked, this, &OcrWindow::replaceAll);
+    for (QLineEdit* e : {m_findEdit, m_replaceEdit})
+        e->setFixedWidth(220);
+    m_matchLabel->setStyleSheet(QStringLiteral("color:gray;")); // 匹配数显示在查找框里的右侧
+    m_matchLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+    auto toolButton = [this](const QString& text, const QString& tip) {
+        auto* b = new QToolButton(m_findBar);
+        b->setText(text);
+        b->setToolTip(tip);
+        b->setAutoRaise(true);
+        b->setFocusPolicy(Qt::NoFocus);
+        return b;
+    };
+    m_caseButton->setText(QStringLiteral("Aa"));
+    m_caseButton->setToolTip(tr("区分大小写"));
+    m_caseButton->setCheckable(true);
+    m_caseButton->setAutoRaise(true);
+    m_caseButton->setFocusPolicy(Qt::NoFocus);
+    QToolButton* prevButton = toolButton(QStringLiteral("↑"), tr("上一个（Shift+回车）"));
+    QToolButton* nextButton = toolButton(QStringLiteral("↓"), tr("下一个（回车）"));
+    QToolButton* closeFindButton = toolButton(QStringLiteral("✕"), tr("关闭（Esc）"));
+    QToolButton* replaceButton = toolButton(tr("替换"), tr("替换当前（回车）"));
+    QToolButton* replaceAllButton = toolButton(tr("全部"), tr("全部替换"));
+    // 图标按钮统一成方形，替换按钮各占两格，上下两行对齐
+    const int side = m_findEdit->sizeHint().height();
+    for (QToolButton* b : {m_caseButton, prevButton, nextButton, closeFindButton})
+        b->setFixedSize(side, side);
+    for (QToolButton* b : {replaceButton, replaceAllButton}) {
+        b->setFixedHeight(side);
+        b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+    connect(prevButton, &QToolButton::clicked, this, [this] { findNext(true); });
+    connect(nextButton, &QToolButton::clicked, this, [this] { findNext(false); });
+    connect(closeFindButton, &QToolButton::clicked, this, &OcrWindow::hideFindBar);
+    connect(replaceButton, &QToolButton::clicked, this, &OcrWindow::replaceOne);
+    connect(replaceAllButton, &QToolButton::clicked, this, &OcrWindow::replaceAll);
     connect(m_findEdit, &QLineEdit::returnPressed, this,
             [this] { findNext(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
     connect(m_replaceEdit, &QLineEdit::returnPressed, this, &OcrWindow::replaceOne);
@@ -76,30 +104,26 @@ OcrWindow::OcrWindow()
             findNext(false);
         updateMatches();
     });
-    connect(m_caseCheck, &QCheckBox::toggled, this, &OcrWindow::updateMatches);
+    connect(m_caseButton, &QToolButton::toggled, this, &OcrWindow::updateMatches);
     connect(m_edit, &QPlainTextEdit::textChanged, this, [this] {
         if (m_findBar->isVisible())
             updateMatches();
     });
 
-    auto* findRow = new QHBoxLayout;
-    findRow->addWidget(m_findEdit, 1);
-    findRow->addWidget(m_matchLabel);
-    findRow->addWidget(m_caseCheck);
-    findRow->addWidget(prevButton);
-    findRow->addWidget(nextButton);
-    // 替换一行只在 Ctrl+H 时显示
-    m_replaceRow = new QWidget(m_findBar);
-    auto* replaceRow = new QHBoxLayout(m_replaceRow);
-    replaceRow->setContentsMargins(0, 0, 0, 0);
-    replaceRow->addWidget(m_replaceEdit, 1);
-    replaceRow->addWidget(replaceButton);
-    replaceRow->addWidget(replaceAllButton);
-    auto* findLayout = new QVBoxLayout(m_findBar);
-    findLayout->setContentsMargins(0, 0, 0, 0);
-    findLayout->addLayout(findRow);
-    findLayout->addWidget(m_replaceRow);
+    auto* findLayout = new QGridLayout(m_findBar);
+    findLayout->setContentsMargins(6, 6, 6, 6);
+    findLayout->setSpacing(4);
+    findLayout->addWidget(m_findEdit, 0, 0);
+    findLayout->addWidget(m_caseButton, 0, 1);
+    findLayout->addWidget(prevButton, 0, 2);
+    findLayout->addWidget(nextButton, 0, 3);
+    findLayout->addWidget(closeFindButton, 0, 4);
+    findLayout->addWidget(m_replaceEdit, 1, 0);
+    findLayout->addWidget(replaceButton, 1, 1, 1, 2);
+    findLayout->addWidget(replaceAllButton, 1, 3, 1, 2);
+    m_replaceWidgets = {m_replaceEdit, replaceButton, replaceAllButton}; // 替换一行只在 Ctrl+H 时显示
     m_findBar->hide();
+    m_edit->installEventFilter(this); // 文本框大小变了，面板跟着贴在右上角
 
     auto* findAction = new QAction(this);
     findAction->setShortcut(QKeySequence::Find);
@@ -118,7 +142,6 @@ OcrWindow::OcrWindow()
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(m_status);
-    layout->addWidget(m_findBar);
     layout->addWidget(m_edit, 1);
     layout->addLayout(buttons);
     setStatus(tr("正在识别文字…"), false);
@@ -160,8 +183,11 @@ void OcrWindow::showFindBar(bool replace)
     const QString selected = m_edit->textCursor().selectedText();
     if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
         m_findEdit->setText(selected);
-    m_replaceRow->setVisible(replace);
+    for (QWidget* w : std::as_const(m_replaceWidgets))
+        w->setVisible(replace);
     m_findBar->show();
+    m_findBar->raise();
+    placeFindBar();
     QLineEdit* target = replace && !m_findEdit->text().isEmpty() ? m_replaceEdit : m_findEdit;
     target->setFocus();
     target->selectAll();
@@ -183,7 +209,7 @@ bool OcrWindow::findNext(bool backward)
     QTextDocument::FindFlags flags;
     if (backward)
         flags |= QTextDocument::FindBackward;
-    if (m_caseCheck->isChecked())
+    if (m_caseButton->isChecked())
         flags |= QTextDocument::FindCaseSensitively;
     QTextDocument* doc = m_edit->document();
     QTextCursor found = doc->find(text, m_edit->textCursor(), flags);
@@ -206,7 +232,7 @@ void OcrWindow::replaceOne()
         return;
     // 当前选中的正好是查找内容才替换，否则先定位到下一个
     QTextCursor c = m_edit->textCursor();
-    const Qt::CaseSensitivity cs = m_caseCheck->isChecked() ? Qt::CaseSensitive : Qt::CaseInsensitive;
+    const Qt::CaseSensitivity cs = m_caseButton->isChecked() ? Qt::CaseSensitive : Qt::CaseInsensitive;
     if (c.hasSelection() && c.selectedText().compare(m_findEdit->text(), cs) == 0) {
         c.insertText(m_replaceEdit->text());
         m_edit->setTextCursor(c);
@@ -220,7 +246,7 @@ void OcrWindow::replaceAll()
     if (m_edit->isReadOnly() || text.isEmpty())
         return;
     QTextDocument::FindFlags flags;
-    if (m_caseCheck->isChecked())
+    if (m_caseButton->isChecked())
         flags |= QTextDocument::FindCaseSensitively;
     QTextDocument* doc = m_edit->document();
     QTextCursor edit(doc);
@@ -242,7 +268,7 @@ void OcrWindow::updateMatches()
     int current = 0;
     if (m_findBar->isVisible() && !text.isEmpty()) {
         QTextDocument::FindFlags flags;
-        if (m_caseCheck->isChecked())
+        if (m_caseButton->isChecked())
             flags |= QTextDocument::FindCaseSensitively;
         const QTextCursor cursor = m_edit->textCursor();
         QTextCharFormat format;
@@ -263,6 +289,28 @@ void OcrWindow::updateMatches()
         m_matchLabel->clear();
     }
     m_edit->setExtraSelections(selections);
+    m_matchLabel->adjustSize();
+    m_matchLabel->move(m_findEdit->width() - m_matchLabel->width() - 6,
+                       (m_findEdit->height() - m_matchLabel->height()) / 2);
+    m_findEdit->setTextMargins(0, 0, m_matchLabel->text().isEmpty() ? 0 : m_matchLabel->width() + 4, 0);
+}
+
+void OcrWindow::placeFindBar()
+{
+    if (!m_findBar->isVisible())
+        return;
+    m_findBar->adjustSize();
+    const QRect r = m_edit->geometry();
+    const QScrollBar* bar = m_edit->verticalScrollBar();
+    const int scrollWidth = bar->isVisible() ? bar->width() : 0;
+    m_findBar->move(r.right() - scrollWidth - m_findBar->width() - 6, r.top() + 6);
+}
+
+bool OcrWindow::eventFilter(QObject* watched, QEvent* e)
+{
+    if (watched == m_edit && (e->type() == QEvent::Resize || e->type() == QEvent::Move))
+        placeFindBar();
+    return QWidget::eventFilter(watched, e);
 }
 
 void OcrWindow::keyPressEvent(QKeyEvent* e)
