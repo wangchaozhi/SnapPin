@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QScreen>
 #include <algorithm>
+#include <atomic>
+#include <memory>
 #include <thread>
 
 #include <dwmapi.h>
@@ -139,45 +141,66 @@ void WinWindowFinder::requestElements(QObject* context, ElementsCallback onReady
     if (!m_elementDetection)
         return;
 
-    // 只细化最可能被截的窗口：光标下的窗口和前台窗口
+    // 所有看得见的顶层窗口都细化到控件（按 Z 序，光标下的窗口最先）；被更上层窗口完全盖住的跳过
     POINT pt{};
     GetCursorPos(&pt);
+    const HWND underCursor = GetAncestor(WindowFromPoint(pt), GA_ROOT);
     QList<QPair<int, HWND>> jobs;
-    for (HWND h : {GetAncestor(WindowFromPoint(pt), GA_ROOT), GetForegroundWindow()}) {
-        const int group = int(m_topLevels.indexOf(h));
-        if (h && group >= 0 && !isOwnWindow(h) && !std::any_of(jobs.cbegin(), jobs.cend(), [h](const auto& j) { return j.second == h; }))
+    QList<QRect> above;
+    for (int group = 0; group < m_topLevels.size(); ++group) {
+        const HWND h = m_topLevels[group];
+        const QRect r = windowRect(h, true);
+        const bool covered = std::any_of(above.cbegin(), above.cend(), [&r](const QRect& a) { return a.contains(r); });
+        above.append(r);
+        if (covered || isOwnWindow(h))
+            continue;
+        if (h == underCursor)
+            jobs.prepend({group, h});
+        else
             jobs.append({group, h});
     }
     if (jobs.isEmpty())
         return;
 
-    // UI Automation 是跨进程调用，复杂应用可能要几百毫秒，放到后台线程，结果到达后再合并
-    QPointer<QObject> guard(context);
-    std::thread([jobs, guard, onReady] {
-        const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        QList<QPair<int, QList<QRect>>> found;
-        for (const auto& job : jobs)
-            found.append({job.first, collectUiaElements(job.second, kMaxElementsPerWindow)});
-        if (SUCCEEDED(co))
-            CoUninitialize();
+    // 会话结束（遮罩关闭）后后台线程尽快停下，不再白白查询
+    auto alive = std::make_shared<std::atomic_bool>(true);
+    QObject::connect(context, &QObject::destroyed, [alive] { *alive = false; });
 
-        QMetaObject::invokeMethod(QCoreApplication::instance(), [guard, onReady, found] {
-            if (!guard)
-                return;
-            for (QScreen* screen : QGuiApplication::screens()) {
-                const QRect phys = physicalScreenRect(screen);
-                const qreal dpr = screen->devicePixelRatio();
-                QList<DetectedWindow> list;
-                for (const auto& [group, rects] : found) {
+    // UI Automation 是跨进程调用，复杂应用可能要几百毫秒，放到后台线程；每查完一个窗口就合并进去，识别逐步变细
+    QPointer<QObject> guard(context);
+    std::thread([jobs, guard, onReady, alive] {
+        const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        for (const auto& [group, hwnd] : jobs) {
+            if (!*alive)
+                break;
+            // 可滚动内容等控件可能比窗口还大，裁到窗口范围内，框选不会超出窗口
+            const QRect bounds = windowRect(hwnd, true);
+            QList<QRect> rects;
+            for (const QRect& r : collectUiaElements(hwnd, kMaxElementsPerWindow)) {
+                const QRect clipped = r & bounds;
+                if (clipped.width() >= 4 && clipped.height() >= 4)
+                    rects.append(clipped);
+            }
+            if (rects.isEmpty())
+                continue;
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [guard, onReady, group, rects] {
+                if (!guard)
+                    return;
+                for (QScreen* screen : QGuiApplication::screens()) {
+                    const QRect phys = physicalScreenRect(screen);
+                    const qreal dpr = screen->devicePixelRatio();
+                    QList<DetectedWindow> list;
                     for (const QRect& r : rects) {
                         const QRect local = toScreenLocal(r, phys, dpr);
                         if (!local.isEmpty())
                             list.append({local, group, true});
                     }
+                    if (!list.isEmpty())
+                        onReady(screen, list);
                 }
-                if (!list.isEmpty())
-                    onReady(screen, list);
-            }
-        }, Qt::QueuedConnection);
+            }, Qt::QueuedConnection);
+        }
+        if (SUCCEEDED(co))
+            CoUninitialize();
     }).detach();
 }
