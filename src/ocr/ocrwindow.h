@@ -38,7 +38,7 @@ private:
 
     QLabel* m_status;
     QPlainTextEdit* m_edit;
-    QFrame* m_findBar; // 浮在文本框右上角，不占布局
+    QFrame* m_findBar; // 盖在文本框顶部，不占布局
     QLineEdit* m_findEdit;
     QLineEdit* m_replaceEdit;
     QList<QWidget*> m_replaceWidgets;

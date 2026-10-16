@@ -59,12 +59,10 @@ OcrWindow::OcrWindow()
     buttons->addWidget(m_copyButton);
     buttons->addWidget(closeButton);
 
-    // 查找 / 替换：浮在文本框右上角的面板。Ctrl+F、Ctrl+H 打开，Esc 收起。回车查找下一个，Shift+回车查找上一个
+    // 查找 / 替换：文本框顶部的面板。Ctrl+F、Ctrl+H 打开，Esc 收起。回车查找下一个，Shift+回车查找上一个
     m_findBar->setObjectName(QStringLiteral("findPanel"));
     m_findEdit->setPlaceholderText(tr("查找"));
     m_replaceEdit->setPlaceholderText(tr("替换为"));
-    for (QLineEdit* e : {m_findEdit, m_replaceEdit})
-        e->setFixedWidth(220);
     m_matchLabel->setStyleSheet(QStringLiteral("color:gray;")); // 匹配数显示在查找框里的右侧
     m_matchLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
@@ -132,7 +130,7 @@ OcrWindow::OcrWindow()
     findLayout->addWidget(replaceAllButton, 1, 3, 1, 2);
     m_replaceWidgets = {m_replaceEdit, replaceButton, replaceAllButton}; // 替换一行只在 Ctrl+H 时显示
     m_findBar->hide();
-    m_edit->installEventFilter(this); // 文本框大小变了，面板跟着贴在右上角
+    m_edit->installEventFilter(this); // 文本框大小变了，面板跟着调整宽度
 
     auto* findAction = new QAction(this);
     findAction->setShortcut(QKeySequence::Find);
@@ -350,10 +348,12 @@ void OcrWindow::placeFindBar()
         edit->setViewportMargins(0, 0, 0, 0);
         return;
     }
-    m_findBar->adjustSize();
-    edit->setViewportMargins(0, m_findBar->height() + 8, 0, 0);
+    // 与文本框同宽、左右对齐，输入框随宽度伸展
     const QRect r = m_edit->geometry();
-    m_findBar->move(r.right() - m_findBar->width() - 4, r.top() + 4);
+    m_findBar->setFixedWidth(r.width());
+    m_findBar->adjustSize();
+    m_findBar->move(r.topLeft());
+    edit->setViewportMargins(0, m_findBar->height() + 6, 0, 0);
 }
 
 bool OcrWindow::eventFilter(QObject* watched, QEvent* e)
