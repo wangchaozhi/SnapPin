@@ -36,7 +36,6 @@ private:
 
     QHash<ToolType, QToolButton*> m_toolButtons;
     QToolButton* m_colorButton = nullptr;
-    QToolButton* m_widthButton = nullptr;
     QToolButton* m_fillButton = nullptr;
     ColorPalette* m_palette = nullptr;
     Style m_style;

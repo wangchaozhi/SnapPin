@@ -54,8 +54,6 @@ public:
             ink.line = dark ? kDisabledDark : kDisabledLight;
         } else {
             ink.line = dark ? m_hue.light : m_hue.deep;
-            if (!dark)
-                ink.body = m_hue.light;
         }
 
         p->save();
@@ -330,16 +328,6 @@ QIcon toolIcon(ToolIcon id)
 {
     // 复制按钮自带两种颜色，不按主题上色
     return makeIcon(drawerFor(id), hueFor(id), id == ToolIcon::Copy);
-}
-
-QIcon widthIcon(qreal width)
-{
-    // 实际粗细 1~30 映射到图标里 1~6 的线宽
-    const qreal w = qBound(1.0, 1.0 + (width - 1) * 0.2, 6.0);
-    return makeIcon([w](QPainter& p, const Ink& ink) {
-        p.setPen(QPen(ink.line, w, Qt::SolidLine, Qt::RoundCap));
-        p.drawLine(QPointF(4.0, 10.0), QPointF(16.0, 10.0));
-    });
 }
 
 QIcon colorIcon(const QColor& color)

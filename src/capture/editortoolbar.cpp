@@ -13,8 +13,6 @@
 
 namespace {
 
-constexpr qreal kWidths[] = {2, 4, 8}; // 粗细按钮循环的三档：细、中、粗
-
 constexpr int kIconSize = 20;
 constexpr int kButtonSize = 32;
 
@@ -90,21 +88,6 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
     connect(m_palette, &ColorPalette::colorPicked, this, applyColor);
     connect(m_palette, &ColorPalette::moreRequested, this, [this, applyColor] {
         applyColor(QColorDialog::getColor(m_style.color, window(), tr("选择颜色")));
-    });
-
-    m_widthButton = addButton(QIcon(), QString());
-    connect(m_widthButton, &QToolButton::clicked, this, [this] {
-        // 在细 / 中 / 粗三档之间循环；滚轮调出的中间值切到下一个更粗的档
-        qreal next = kWidths[0];
-        for (const qreal w : kWidths) {
-            if (w > m_style.width + 0.01) {
-                next = w;
-                break;
-            }
-        }
-        m_style.width = next;
-        updateStyleButtons();
-        emit styleChanged(m_style);
     });
 
     m_fillButton = addButton(toolIcon(ToolIcon::Fill), tr("填充：矩形、椭圆画成实心，文字加底色"));
@@ -201,6 +184,4 @@ void EditorToolbar::updateStyleButtons()
     const QSignalBlocker block(m_fillButton); // 同步显示，不当作用户操作
     m_fillButton->setChecked(m_style.fill);
     m_colorButton->setIcon(colorIcon(m_style.color));
-    m_widthButton->setIcon(widthIcon(m_style.width));
-    m_widthButton->setToolTip(tr("粗细：%1（点击在细 / 中 / 粗之间切换，绘制时滚动鼠标滚轮微调）").arg(m_style.width));
 }

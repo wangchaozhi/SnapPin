@@ -29,7 +29,5 @@ enum class ToolIcon {
 bool toolbarDarkMode();
 
 QIcon toolIcon(ToolIcon id);
-// 线宽按钮：一条按比例显示粗细的横线
-QIcon widthIcon(qreal width);
 // 颜色按钮：圆形色块
 QIcon colorIcon(const QColor& color);
