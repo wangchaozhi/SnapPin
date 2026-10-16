@@ -4,9 +4,13 @@
 
 namespace {
 
-constexpr int kEdgeThreshold = 40; // 相邻像素 RGB 差值之和超过它算边缘（浅灰边框 #E0E0E0 对白底约 93）
+constexpr int kEdgeThreshold = 30; // 相邻像素 RGB 差值之和超过它算边缘（浅灰边框 #E0E0E0 对白底约 93）
 constexpr int kGap = 2;            // 边缘线允许的断点
 constexpr int kMaxExpand = 24;     // 某条边不闭合时向外找下一条线的次数上限
+constexpr int kLongLine = 64;      // 这么长的直边缘算长线（输入框、色块的边）
+constexpr int kHugeLine = 256;     // 这么长的算结构线（窗口边框、贯穿的分界线）
+constexpr int kMaxPillHeight = 96;
+constexpr int kMinPillLine = 48;   // 胶囊上下边至少这么长 // 胶囊形（两端是半圆，没有竖边）的输入框、按钮最高多少
 
 inline int colorDiff(QRgb a, QRgb b)
 {
@@ -38,22 +42,72 @@ ImageRegionDetector::ImageRegionDetector(const QImage& image, int minLineLength,
         }
     }
 
-    const size_t stride = size_t(m_w) + 1;
-    m_sat.assign(stride * (size_t(m_h0) + 1), 0);
+    // 切分内容用的两套前缀和，直边缘按长度分三类：
+    // 短的（文字、图标）总算内容；长的（输入框、实心色块的边）在同方向切分时当作空白——
+    // 按行切时只有长横线的行算空白行，但按列切时它算内容，实心色块中间的列不会变成空白；
+    // 特别长的（窗口边框、贯穿的分界线）哪个方向都不算内容
+    std::vector<uint8_t> hClass(size_t(m_w) * size_t(m_h0), 0), vClass(size_t(m_w) * size_t(m_h0), 0); // 0 无 1 短 2 长 3 特别长
+    auto classifyRuns = [&](bool horizontal) {
+        const int lines = horizontal ? m_h0 : m_w;
+        const int len = horizontal ? m_w : m_h0;
+        for (int a = 0; a < lines; ++a) {
+            auto edge = [&](int i) { return horizontal ? hEdge(i, a) : vEdge(a, i); };
+            for (int i = 0; i < len;) {
+                if (!edge(i)) {
+                    ++i;
+                    continue;
+                }
+                int end = i;
+                for (int k = i + 1, gap = 0; k < len && gap <= kGap; ++k) {
+                    if (edge(k)) {
+                        end = k;
+                        gap = 0;
+                    } else {
+                        ++gap;
+                    }
+                }
+                const int runLen = end - i + 1;
+                const uint8_t cls = runLen < kLongLine ? 1 : runLen < kHugeLine ? 2 : 3;
+                for (int k = i; k <= end; ++k) {
+                    if (edge(k))
+                        (horizontal ? hClass[size_t(a) * size_t(m_w) + size_t(k)]
+                                    : vClass[size_t(k) * size_t(m_w) + size_t(a)]) = cls;
+                }
+                i = end + 1;
+            }
+        }
+    };
+    classifyRuns(true);
+    classifyRuns(false);
+
+    m_rowPre.assign(size_t(m_w + 1) * size_t(m_h0), 0);
+    m_colPre.assign(size_t(m_h0 + 1) * size_t(m_w), 0);
     for (int y = 0; y < m_h0; ++y) {
-        uint32_t rowSum = 0;
+        uint16_t* pre = &m_rowPre[size_t(y) * size_t(m_w + 1)];
         for (int x = 0; x < m_w; ++x) {
-            rowSum += (hEdge(x, y) || vEdge(x, y)) ? 1 : 0;
-            m_sat[(size_t(y) + 1) * stride + size_t(x) + 1] = m_sat[size_t(y) * stride + size_t(x) + 1] + rowSum;
+            const size_t i = size_t(y) * size_t(m_w) + size_t(x);
+            pre[x + 1] = uint16_t(pre[x] + ((hClass[i] == 1 || vClass[i] == 1 || vClass[i] == 2) ? 1 : 0));
+        }
+    }
+    for (int x = 0; x < m_w; ++x) {
+        uint16_t* pre = &m_colPre[size_t(x) * size_t(m_h0 + 1)];
+        for (int y = 0; y < m_h0; ++y) {
+            const size_t i = size_t(y) * size_t(m_w) + size_t(x);
+            pre[y + 1] = uint16_t(pre[y] + ((vClass[i] == 1 || hClass[i] == 1 || hClass[i] == 2) ? 1 : 0));
         }
     }
 }
 
-int ImageRegionDetector::edgeCount(int x0, int y0, int x1, int y1) const
+bool ImageRegionDetector::rowHasContent(int y, int x0, int x1) const
 {
-    const size_t stride = size_t(m_w) + 1;
-    auto at = [&](int x, int y) { return m_sat[size_t(y) * stride + size_t(x)]; };
-    return int(at(x1 + 1, y1 + 1) - at(x0, y1 + 1) - at(x1 + 1, y0) + at(x0, y0));
+    const uint16_t* pre = &m_rowPre[size_t(y) * size_t(m_w + 1)];
+    return pre[x1 + 1] != pre[x0];
+}
+
+bool ImageRegionDetector::colHasContent(int x, int y0, int y1) const
+{
+    const uint16_t* pre = &m_colPre[size_t(x) * size_t(m_h0 + 1)];
+    return pre[y1 + 1] != pre[y0];
 }
 
 void ImageRegionDetector::hExtent(int x, int y, int& x0, int& x1) const
@@ -185,7 +239,83 @@ QRect ImageRegionDetector::regionAt(const QPoint& p) const
     const int y0 = qMax(0, top);
     const int x1 = qMin(m_w - 1, right + 1);
     const int y1 = qMin(m_h0 - 1, bottom + 1);
+    // 比最短边线还小的“框”是图标、文字里的笔画，不是控件
+    if (x1 - x0 + 1 < m_minLen || y1 - y0 + 1 < m_minLen)
+        return {};
     return QRect(QPoint(x0, y0), QPoint(x1, y1));
+}
+
+QRect ImageRegionDetector::pillAt(const QPoint& p) const
+{
+    // 上下各有一条横线、两条线左右端几乎对齐：两端是圆角（没有竖直边）的输入框、按钮。
+    // 最近的横线可能是里面文字的笔画，所以向外逐对尝试，取最近的一对对齐的线
+    struct Line { int y, x0, x1; };
+    std::vector<Line> ups, downs;
+    for (int y = p.y() - 1; y >= 0 && p.y() - y < kMaxPillHeight; --y)
+        if (hLine(p.x(), y)) {
+            int x0, x1;
+            hExtent(p.x(), y, x0, x1);
+            ups.push_back({y, x0, x1});
+        }
+    for (int y = p.y(); y < m_h0 - 1 && y - p.y() < kMaxPillHeight; ++y)
+        if (hLine(p.x(), y)) {
+            int x0, x1;
+            hExtent(p.x(), y, x0, x1);
+            downs.push_back({y, x0, x1});
+        }
+    // 所有对齐的上下线对；胶囊的上下边比高度长得多，文字笔画偶尔也会上下对齐，但没这么长
+    struct Pair { int top, bottom, x0, x1; };
+    std::vector<Pair> pairs;
+    int minSpan = kMaxPillHeight + 1;
+    for (const Line& a : ups) {
+        for (const Line& b : downs) {
+            const int span = b.y - a.y;
+            const int minLen = qMax(kMinPillLine, 2 * span);
+            if (span < m_minLen || span > kMaxPillHeight || qAbs(a.x0 - b.x0) > 3 || qAbs(a.x1 - b.x1) > 3
+                || a.x1 - a.x0 + 1 < minLen || b.x1 - b.x0 + 1 < minLen)
+                continue;
+            pairs.push_back({a.y, b.y, qMin(a.x0, b.x0), qMax(a.x1, b.x1)});
+            minSpan = qMin(minSpan, span);
+        }
+    }
+    // 最近的一对是边框；粗边框（或抗锯齿）内外两条线都对齐，在只比它高几个像素的线对里取最外侧的，框住整条边框
+    int top = -1, bottom = -1, lineX0 = 0, lineX1 = 0;
+    for (const Pair& pr : pairs) {
+        if (pr.bottom - pr.top <= minSpan + 4 && (top < 0 || pr.bottom - pr.top > bottom - top)) {
+            top = pr.top;
+            bottom = pr.bottom;
+            lineX0 = pr.x0;
+            lineX1 = pr.x1;
+        }
+    }
+    if (top < 0)
+        return {};
+    // 圆角从直线两端往外再延伸最多半个高度；在中间那一行找最外侧的边缘作为左右边界
+    const int h = bottom - top;
+    const int mid = (top + bottom) / 2;
+    int left = lineX0, right = lineX1 + 1;
+    // 碰到边缘后，再隔开一段空白就停（后面是旁边的图标，不属于这个控件）；里面靠边的头像等图标和圆角之间也有空白，所以按高度放宽
+    const int maxGap = h / 3;
+    const int lineStart = left;
+    for (int x = lineStart - 1, gap = -1; x >= qMax(0, lineStart - h / 2 - 2) && gap <= maxGap; --x) {
+        if (vEdge(x, mid)) {
+            left = x;
+            gap = 0;
+        } else if (gap >= 0) {
+            ++gap;
+        }
+    }
+    const int lineEnd = right;
+    for (int x = lineEnd, gap = -1; x < qMin(m_w - 1, lineEnd + h / 2 + 2) && gap <= maxGap; ++x) {
+        if (vEdge(x, mid)) {
+            right = x + 1;
+            gap = 0;
+        } else if (gap >= 0) {
+            ++gap;
+        }
+    }
+    const QRect r(QPoint(left, top), QPoint(right, bottom + 1));
+    return r.contains(p) && r.width() >= m_minLen ? r : QRect();
 }
 
 QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container) const
@@ -202,7 +332,7 @@ QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container)
             const int to = rows ? r.bottom() : r.right();
             const int at = rows ? p.y() : p.x();
             auto filled = [&](int i) {
-                return rows ? edgeCount(r.left(), i, r.right(), i) > 0 : edgeCount(i, r.top(), i, r.bottom()) > 0;
+                return rows ? rowHasContent(i, r.left(), r.right()) : colHasContent(i, r.top(), r.bottom());
             };
             // 找包含 at 的内容段：段内空白不超过 m_gap
             int segStart = -1, segEnd = -1, lastFilled = -1, start = -1;
@@ -226,10 +356,9 @@ QRect ImageRegionDetector::contentBlock(const QPoint& p, const QRect& container)
             if (segStart < 0 || at > segEnd + 1)
                 return {};
             // 这一段之外还有别的内容，才说明真的把它和旁边的东西分开了（只是去掉空白边距不算）
-            const int inside = rows ? edgeCount(r.left(), segStart, r.right(), segEnd)
-                                    : edgeCount(segStart, r.top(), segEnd, r.bottom());
-            if (edgeCount(r.left(), r.top(), r.right(), r.bottom()) > inside)
-                split = true;
+            for (int i = from; i <= to && !split; ++i)
+                if ((i < segStart || i > segEnd) && filled(i))
+                    split = true;
             if (rows)
                 r.setRect(r.x(), segStart, r.width(), segEnd - segStart + 2); // 横向边缘在 y 与 y+1 之间
             else
@@ -251,9 +380,13 @@ QRect ImageRegionDetector::elementAt(const QPoint& p, const QRect& bounds) const
     const QRect area = bounds & QRect(0, 0, m_w, m_h0);
     if (m_h.empty() || !area.contains(p))
         return {};
-    QRect container = regionAt(p) & area;
-    if (!container.contains(p))
-        container = area;
+    // 容器取边框矩形和胶囊形里更小的那个
+    QRect container = area;
+    for (const QRect& r : {regionAt(p), pillAt(p)}) {
+        const QRect c = r & area;
+        if (c.contains(p) && qint64(c.width()) * c.height() < qint64(container.width()) * container.height())
+            container = c;
+    }
     const QRect block = contentBlock(p, container);
     if (!block.isEmpty())
         return block;

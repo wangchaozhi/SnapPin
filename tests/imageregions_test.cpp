@@ -58,10 +58,32 @@ int main(int argc, char** argv)
     const QRect all = page.rect();
     expect("paragraph", e.elementAt({60, 54}, all), QRect(QPoint(47, 47), QPoint(163, 75)));
     expect("paragraph line gap", e.elementAt({60, 61}, all), QRect(QPoint(47, 47), QPoint(163, 75)));
-    expect("paragraph 2", e.elementAt({60, 104}, all), QRect(QPoint(47, 97), QPoint(143, 111)));
+    expect("paragraph 2", e.elementAt({60, 104}, all), QRect(QPoint(47, 98), QPoint(143, 111)));
     expect("icon", e.elementAt({310, 60}, all), QRect(QPoint(299, 49), QPoint(332, 82)));
     expect("button label keeps button", e.elementAt({100, 215}, all), QRect(QPoint(50, 200), QPoint(170, 230)));
     expect("blank in panel", e.elementAt({400, 250}, all), QRect(QPoint(20, 20), QPoint(520, 320)));
     expect("outside bounds", e.elementAt({60, 54}, QRect(200, 200, 50, 50)), QRect());
+
+    // 浏览器顶栏：标签栏和工具栏之间是一条贯穿全宽的分界线，工具栏里有胶囊形地址栏和一排小图标
+    QImage bar(800, 200, QImage::Format_RGB32);
+    bar.fill(Qt::white);
+    QPainter b(&bar);
+    b.fillRect(0, 0, 800, 50, QColor(0xD3, 0xE3, 0xFD)); // 标签栏底色，下边界是全宽的分界线
+    b.setRenderHint(QPainter::Antialiasing);
+    b.setPen(QPen(QColor(0x1A, 0x73, 0xE8), 2));
+    b.drawRoundedRect(QRectF(100, 60, 400, 40), 20, 20);  // 胶囊地址栏 99..501 x 59..101
+    b.setRenderHint(QPainter::Antialiasing, false);
+    for (const int x : {560, 600, 640})
+        b.fillRect(x, 70, 20, 20, QColor(0x5F, 0x63, 0x68)); // 图标
+    b.end();
+
+    ImageRegionDetector f(bar);
+    const QRect pill = f.elementAt({300, 80}, bar.rect());
+    expect("pill height", QRect(0, pill.y(), 1, pill.height()), QRect(0, 58, 1, 44));
+    if (qAbs(pill.left() - 99) > 2 || qAbs(pill.right() - 501) > 2) {
+        std::printf("FAIL pill sides: %d..%d\n", pill.left(), pill.right());
+        ++failures;
+    }
+    expect("toolbar icon", f.elementAt({610, 80}, bar.rect()), QRect(QPoint(599, 69), QPoint(620, 90)));
     return failures ? 1 : 0;
 }

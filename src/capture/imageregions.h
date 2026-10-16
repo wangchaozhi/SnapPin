@@ -31,13 +31,15 @@ private:
     void vExtent(int x, int y, int& y0, int& y1) const;
     bool hLine(int x, int y) const; // 经过 (x, y) 的横向边缘线足够长
     bool vLine(int x, int y) const;
+    QRect pillAt(const QPoint& p) const;
     QRect contentBlock(const QPoint& p, const QRect& container) const;
-    // 边缘像素计数的积分图：任意矩形里有多少边缘像素 O(1) 可得
-    int edgeCount(int x0, int y0, int x1, int y1) const;
+    // 第 y 行的 [x0, x1] / 第 x 列的 [y0, y1] 里有没有内容（见构造函数里的说明）
+    bool rowHasContent(int y, int x0, int x1) const;
+    bool colHasContent(int x, int y0, int y1) const;
 
     int m_w = 0, m_h0 = 0;
     int m_minLen;
     int m_gap;
     std::vector<uint8_t> m_h, m_v;
-    std::vector<uint32_t> m_sat; // (w+1)×(h+1)
+    std::vector<uint16_t> m_rowPre, m_colPre; // 每行 / 每列的内容前缀和
 };
