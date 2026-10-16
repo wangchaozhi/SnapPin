@@ -95,6 +95,9 @@ endif()
 # 应用图标：Windows 嵌进 exe，macOS 放进 .app/Contents/Resources（源文件和生成脚本见 resources/icons、tools/gen_icons.py）
 if(WIN32)
     set(APP_ICON_SOURCES resources/icons/snappin.rc)
+    # .rc 编译器不跟踪 .ico 的改动，手动声明依赖
+    set_source_files_properties(resources/icons/snappin.rc PROPERTIES
+        OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/snappin.ico)
 elseif(APPLE)
     set(APP_ICON_SOURCES resources/icons/snappin.icns)
     set_source_files_properties(resources/icons/snappin.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
