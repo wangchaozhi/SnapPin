@@ -107,6 +107,16 @@ Drawer drawerFor(ToolIcon id)
     case ToolIcon::Ellipse:
         return [](QPainter& p, const QColor&) { p.drawEllipse(QPointF(10.0, 10.0), 7.0, 5.5); };
 
+    case ToolIcon::Line:
+        return [](QPainter& p, const QColor&) { p.drawLine(QPointF(4.5, 15.5), QPointF(15.5, 4.5)); };
+
+    case ToolIcon::Number:
+        return [](QPainter& p, const QColor&) {
+            // 圆圈里的 1
+            p.drawEllipse(QPointF(10.0, 10.0), 7.0, 7.0);
+            p.drawPath(polyline({{8.4, 7.6}, {10.4, 6.2}, {10.4, 13.8}}));
+        };
+
     case ToolIcon::Arrow:
         return [](QPainter& p, const QColor&) {
             p.drawLine(QPointF(4.5, 15.5), QPointF(15.0, 5.0));
@@ -217,10 +227,10 @@ QIcon toolIcon(ToolIcon id, bool accent)
     return makeIcon(drawerFor(id), accent);
 }
 
-QIcon widthIcon(int level)
+QIcon widthIcon(qreal width)
 {
-    static const qreal widths[] = {1.2, 2.6, 4.6};
-    const qreal w = widths[qBound(0, level, 2)];
+    // 实际粗细 1~30 映射到图标里 1~6 的线宽
+    const qreal w = qBound(1.0, 1.0 + (width - 1) * 0.2, 6.0);
     return makeIcon([w](QPainter& p, const QColor& c) {
         p.setPen(QPen(c, w, Qt::SolidLine, Qt::RoundCap));
         p.drawLine(QPointF(4.0, 10.0), QPointF(16.0, 10.0));

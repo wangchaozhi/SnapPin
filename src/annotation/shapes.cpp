@@ -92,6 +92,68 @@ void ArrowShape::paint(QPainter& p, const RenderContext&) const
     p.drawPolygon(tip);
 }
 
+void LineShape::paint(QPainter& p, const RenderContext&) const
+{
+    p.setPen(QPen(style.color, style.width, Qt::SolidLine, Qt::RoundCap));
+    p.drawLine(p1, p2);
+}
+
+bool LineShape::hitTest(const QPointF& pos, qreal tolerance) const
+{
+    QPainterPath path(p1);
+    path.lineTo(p2);
+    return strokeHit(path, pos, tolerance);
+}
+
+bool NumberShape::hasTail() const
+{
+    return QLineF(center, tail).length() > radius() + 2;
+}
+
+void NumberShape::paint(QPainter& p, const RenderContext&) const
+{
+    const qreal r = radius();
+    p.setPen(Qt::NoPen);
+    p.setBrush(style.color);
+    if (hasTail()) {
+        // 尾巴：从圆的两侧切线收向尾端的三角形
+        const QLineF axis(center, tail);
+        const QPointF dir = (tail - center) / axis.length();
+        const QPointF normal(-dir.y(), dir.x());
+        const QPolygonF tri{center + normal * r * 0.6, tail, center - normal * r * 0.6};
+        p.drawPolygon(tri);
+    }
+    p.drawEllipse(center, r, r);
+
+    QFont f;
+    f.setBold(true);
+    f.setPixelSize(qRound(r * (number >= 10 ? 1.0 : 1.2)));
+    p.setFont(f);
+    // 浅色底用深色数字，保证可读
+    p.setPen(style.color.lightnessF() > 0.7 ? QColor(30, 30, 30) : QColor(Qt::white));
+    p.drawText(QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r), Qt::AlignCenter, QString::number(number));
+}
+
+QRectF NumberShape::boundingRect() const
+{
+    const qreal r = radius();
+    QRectF box(center.x() - r, center.y() - r, 2 * r, 2 * r);
+    if (hasTail())
+        box = box.united(QRectF(tail, QSizeF(1, 1)));
+    return box;
+}
+
+bool NumberShape::hitTest(const QPointF& pos, qreal tolerance) const
+{
+    if (QLineF(center, pos).length() <= radius() + tolerance)
+        return true;
+    if (!hasTail())
+        return false;
+    QPainterPath path(center);
+    path.lineTo(tail);
+    return strokeHit(path, pos, tolerance + 2);
+}
+
 void MosaicShape::paint(QPainter& p, const RenderContext& ctx) const
 {
     if (!ctx.source)
@@ -103,8 +165,9 @@ void MosaicShape::paint(QPainter& p, const RenderContext& ctx) const
     if (src.isEmpty())
         return;
 
-    if (src != m_cacheRect) {
-        const int block = qMax(4, int(style.width * 3 * dpr));
+    const int block = qMax(4, int(style.width * 3 * dpr));
+    if (src != m_cacheRect || block != m_cacheBlock) { // 粗细（块大小）改变时也要重新取样
+        m_cacheBlock = block;
         const QImage img = ctx.source->copy(src).toImage();
         const QImage small = img.scaled(qMax(1, src.width() / block), qMax(1, src.height() / block),
                                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);

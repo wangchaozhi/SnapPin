@@ -10,11 +10,7 @@
 
 namespace {
 
-struct WidthLevel {
-    qreal width;
-    const char* label;
-};
-constexpr WidthLevel kWidths[] = {{2, "细"}, {4, "中"}, {8, "粗"}};
+constexpr qreal kWidths[] = {2, 4, 8}; // 粗细按钮循环的三档：细、中、粗
 
 constexpr int kIconSize = 20;
 constexpr int kButtonSize = 32;
@@ -51,13 +47,15 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
         ToolIcon icon;
         const char* tip;
     } tools[] = {
-        {ToolType::Rect, ToolIcon::Rect, "矩形"},
-        {ToolType::Ellipse, ToolIcon::Ellipse, "椭圆"},
-        {ToolType::Arrow, ToolIcon::Arrow, "箭头"},
+        {ToolType::Rect, ToolIcon::Rect, "矩形（Shift：正方形）"},
+        {ToolType::Ellipse, ToolIcon::Ellipse, "椭圆（Shift：圆）"},
+        {ToolType::Line, ToolIcon::Line, "直线（Shift：45° 吸附）"},
+        {ToolType::Arrow, ToolIcon::Arrow, "箭头（Shift：45° 吸附）"},
         {ToolType::Pen, ToolIcon::Pen, "画笔"},
         {ToolType::Marker, ToolIcon::Marker, "荧光笔"},
         {ToolType::Mosaic, ToolIcon::Mosaic, "马赛克"},
         {ToolType::Text, ToolIcon::Text, "文字"},
+        {ToolType::Number, ToolIcon::Number, "序号（拖动可拉出指示尾巴）"},
     };
     for (const auto& t : tools) {
         QToolButton* b = addButton(toolIcon(t.icon), QString::fromUtf8(t.tip));
@@ -81,12 +79,15 @@ EditorToolbar::EditorToolbar(QUndoStack* undo, QWidget* parent)
 
     m_widthButton = addButton(QIcon(), QString());
     connect(m_widthButton, &QToolButton::clicked, this, [this] {
-        int idx = 0;
-        for (int i = 0; i < int(std::size(kWidths)); ++i) {
-            if (qFuzzyCompare(kWidths[i].width, m_style.width))
-                idx = i;
+        // 在细 / 中 / 粗三档之间循环；滚轮调出的中间值切到下一个更粗的档
+        qreal next = kWidths[0];
+        for (const qreal w : kWidths) {
+            if (w > m_style.width + 0.01) {
+                next = w;
+                break;
+            }
         }
-        m_style.width = kWidths[(idx + 1) % std::size(kWidths)].width;
+        m_style.width = next;
         updateStyleButtons();
         emit styleChanged(m_style);
     });
@@ -138,14 +139,15 @@ void EditorToolbar::setCurrentTool(ToolType type)
         it.value()->setChecked(it.key() == type);
 }
 
+void EditorToolbar::setStyle(const Style& style)
+{
+    m_style = style;
+    updateStyleButtons();
+}
+
 void EditorToolbar::updateStyleButtons()
 {
     m_colorButton->setIcon(colorIcon(m_style.color));
-
-    for (int i = 0; i < int(std::size(kWidths)); ++i) {
-        if (qFuzzyCompare(kWidths[i].width, m_style.width)) {
-            m_widthButton->setIcon(widthIcon(i));
-            m_widthButton->setToolTip(tr("粗细：%1（点击切换）").arg(QString::fromUtf8(kWidths[i].label)));
-        }
-    }
+    m_widthButton->setIcon(widthIcon(m_style.width));
+    m_widthButton->setToolTip(tr("粗细：%1（点击在细 / 中 / 粗之间切换，绘制时滚动鼠标滚轮微调）").arg(m_style.width));
 }

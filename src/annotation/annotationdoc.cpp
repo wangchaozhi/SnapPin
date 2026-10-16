@@ -57,6 +57,37 @@ private:
     bool m_applied = true;
 };
 
+class RestyleCommand : public QUndoCommand {
+public:
+    RestyleCommand(AnnotationDoc* doc, std::shared_ptr<Shape> shape, const Style& to)
+        : m_doc(doc), m_shape(std::move(shape)), m_from(m_shape->style), m_to(to) {}
+
+    int id() const override { return 1; }
+    bool mergeWith(const QUndoCommand* other) override
+    {
+        const auto* o = static_cast<const RestyleCommand*>(other);
+        if (o->m_shape != m_shape)
+            return false;
+        m_to = o->m_to;
+        return true;
+    }
+    void redo() override { apply(m_to); }
+    void undo() override { apply(m_from); }
+
+private:
+    void apply(const Style& s)
+    {
+        m_shape->style = s;
+        emit m_doc->changed();
+        if (m_doc->m_selected == m_shape.get())
+            emit m_doc->selectionChanged(m_shape.get()); // 让工具栏显示图形当前的样式
+    }
+
+    AnnotationDoc* m_doc;
+    std::shared_ptr<Shape> m_shape;
+    Style m_from, m_to;
+};
+
 AnnotationDoc::AnnotationDoc(QObject* parent)
     : QObject(parent)
 {
@@ -81,6 +112,24 @@ void AnnotationDoc::commitMove(Shape* shape, const QPointF& delta)
         m_undo.push(new MoveShapeCommand(this, sp, delta));
 }
 
+void AnnotationDoc::restyle(Shape* shape, const Style& style)
+{
+    auto sp = find(shape);
+    if (!sp || (sp->style.color == style.color && qFuzzyCompare(sp->style.width, style.width)))
+        return;
+    m_undo.push(new RestyleCommand(this, sp, style));
+}
+
+int AnnotationDoc::nextNumber() const
+{
+    int n = 0;
+    for (const auto& s : m_shapes) {
+        if (const auto* num = dynamic_cast<const NumberShape*>(s.get()))
+            n = qMax(n, num->number);
+    }
+    return n + 1;
+}
+
 Shape* AnnotationDoc::shapeAt(const QPointF& pos) const
 {
     for (auto it = m_shapes.rbegin(); it != m_shapes.rend(); ++it) {
@@ -96,6 +145,7 @@ void AnnotationDoc::setSelected(Shape* shape)
         return;
     m_selected = shape;
     emit changed();
+    emit selectionChanged(shape);
 }
 
 std::shared_ptr<Shape> AnnotationDoc::find(Shape* shape) const
@@ -119,9 +169,12 @@ size_t AnnotationDoc::erase(const std::shared_ptr<Shape>& shape)
     const size_t index = size_t(it - m_shapes.begin());
     if (it != m_shapes.end())
         m_shapes.erase(it);
-    if (m_selected == shape.get())
+    const bool wasSelected = m_selected == shape.get();
+    if (wasSelected)
         m_selected = nullptr;
     emit changed();
+    if (wasSelected)
+        emit selectionChanged(nullptr);
     return index;
 }
 

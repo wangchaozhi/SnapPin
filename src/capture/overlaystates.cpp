@@ -291,6 +291,7 @@ void AnnotatingState::mousePress(QMouseEvent* e)
     if (e->button() != Qt::LeftButton || !w->tool())
         return;
     m_drawing = true;
+    w->toolContext().modifiers = e->modifiers();
     w->tool()->press(e->position(), w->toolContext());
     w->update();
 }
@@ -299,6 +300,7 @@ void AnnotatingState::mouseMove(QMouseEvent* e)
 {
     if (!m_drawing)
         return;
+    w->toolContext().modifiers = e->modifiers();
     w->tool()->move(e->position(), w->toolContext());
     w->update();
 }
@@ -308,6 +310,7 @@ void AnnotatingState::mouseRelease(QMouseEvent* e)
     if (e->button() != Qt::LeftButton || !m_drawing)
         return;
     m_drawing = false;
+    w->toolContext().modifiers = e->modifiers();
     w->tool()->release(e->position(), w->toolContext());
     w->update();
 }

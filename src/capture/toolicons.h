@@ -7,11 +7,13 @@
 enum class ToolIcon {
     Rect,
     Ellipse,
+    Line,
     Arrow,
     Pen,
     Marker,
     Mosaic,
     Text,
+    Number,
     Undo,
     Redo,
     LongCapture,
@@ -23,7 +25,7 @@ enum class ToolIcon {
 
 // accent：始终用主题色绘制（主操作按钮）
 QIcon toolIcon(ToolIcon id, bool accent = false);
-// 线宽按钮：一条对应粗细的横线；level 为 0、1、2（细、中、粗）
-QIcon widthIcon(int level);
+// 线宽按钮：一条按比例显示粗细的横线
+QIcon widthIcon(qreal width);
 // 颜色按钮：圆形色块
 QIcon colorIcon(const QColor& color);

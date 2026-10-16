@@ -8,31 +8,51 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPointer>
+#include <cmath>
 #include <functional>
 
 namespace {
 
-// 拖拽两点生成的图形：矩形、椭圆、箭头、马赛克
+// 按住 Shift 时的约束：框类图形变成正方形 / 圆，线类图形吸附到 45° 的整数倍
+enum class Constraint { Box, Line };
+
+QPointF constrained(const QPointF& from, const QPointF& to, Constraint c)
+{
+    const QPointF d = to - from;
+    if (c == Constraint::Box) {
+        const qreal s = qMax(qAbs(d.x()), qAbs(d.y()));
+        return from + QPointF(d.x() < 0 ? -s : s, d.y() < 0 ? -s : s);
+    }
+    const qreal len = std::hypot(d.x(), d.y());
+    const qreal step = 3.14159265358979323846 / 4; // MSVC 默认不提供 M_PI
+    const qreal angle = std::round(std::atan2(d.y(), d.x()) / step) * step;
+    return from + QPointF(std::cos(angle), std::sin(angle)) * len;
+}
+
+// 拖拽两点生成的图形：矩形、椭圆、直线、箭头、马赛克
 class DragTool : public ITool {
 public:
     using Factory = std::function<std::unique_ptr<DragShape>(const Style&)>;
-    explicit DragTool(Factory f) : m_factory(std::move(f)) {}
+    DragTool(Factory f, Constraint c) : m_factory(std::move(f)), m_constraint(c) {}
 
     void press(const QPointF& pos, ToolContext& ctx) override
     {
         m_shape = m_factory(ctx.style);
         m_shape->p1 = m_shape->p2 = pos;
     }
-    void move(const QPointF& pos, ToolContext&) override
+    void move(const QPointF& pos, ToolContext& ctx) override
     {
-        if (m_shape)
-            m_shape->p2 = pos;
+        if (!m_shape)
+            return;
+        m_shape->p2 = endPoint(pos, ctx);
+        m_shape->style = ctx.style; // 拖拽中滚轮调粗细，预览立即生效
     }
     void release(const QPointF& pos, ToolContext& ctx) override
     {
         if (!m_shape)
             return;
-        m_shape->p2 = pos;
+        m_shape->p2 = endPoint(pos, ctx);
+        m_shape->style = ctx.style;
         if (m_shape->isValid())
             ctx.doc->add(std::move(m_shape));
         m_shape.reset();
@@ -44,8 +64,49 @@ public:
     }
 
 private:
+    QPointF endPoint(const QPointF& pos, const ToolContext& ctx) const
+    {
+        return (ctx.modifiers & Qt::ShiftModifier) ? constrained(m_shape->p1, pos, m_constraint) : pos;
+    }
+
     Factory m_factory;
+    Constraint m_constraint;
     std::unique_ptr<DragShape> m_shape;
+};
+
+// 序号：单击放下一个自动递增的编号，按住拖动可拉出指向目标的尾巴
+class NumberTool : public ITool {
+public:
+    void press(const QPointF& pos, ToolContext& ctx) override
+    {
+        m_shape = std::make_unique<NumberShape>(ctx.style);
+        m_shape->center = m_shape->tail = pos;
+        m_shape->number = ctx.doc->nextNumber();
+    }
+    void move(const QPointF& pos, ToolContext& ctx) override
+    {
+        if (!m_shape)
+            return;
+        m_shape->tail = pos;
+        m_shape->style = ctx.style;
+    }
+    void release(const QPointF& pos, ToolContext& ctx) override
+    {
+        if (!m_shape)
+            return;
+        m_shape->tail = pos;
+        m_shape->style = ctx.style;
+        ctx.doc->add(std::move(m_shape));
+        m_shape.reset();
+    }
+    void paintPreview(QPainter& p, const RenderContext& rc) const override
+    {
+        if (m_shape)
+            m_shape->paint(p, rc);
+    }
+
+private:
+    std::unique_ptr<NumberShape> m_shape;
 };
 
 class PenTool : public ITool {
@@ -168,13 +229,17 @@ std::unique_ptr<ITool> createTool(ToolType type)
 {
     switch (type) {
     case ToolType::Rect:
-        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<RectShape>(s); });
+        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<RectShape>(s); }, Constraint::Box);
     case ToolType::Ellipse:
-        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<EllipseShape>(s); });
+        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<EllipseShape>(s); }, Constraint::Box);
+    case ToolType::Line:
+        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<LineShape>(s); }, Constraint::Line);
     case ToolType::Arrow:
-        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<ArrowShape>(s); });
+        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<ArrowShape>(s); }, Constraint::Line);
     case ToolType::Mosaic:
-        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<MosaicShape>(s); });
+        return std::make_unique<DragTool>([](const Style& s) { return std::make_unique<MosaicShape>(s); }, Constraint::Box);
+    case ToolType::Number:
+        return std::make_unique<NumberTool>();
     case ToolType::Pen:
         return std::make_unique<PenTool>(false);
     case ToolType::Marker:

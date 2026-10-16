@@ -8,12 +8,13 @@
 class AnnotationDoc;
 class QWidget;
 
-enum class ToolType { None, Rect, Ellipse, Arrow, Pen, Marker, Mosaic, Text };
+enum class ToolType { None, Rect, Ellipse, Line, Arrow, Pen, Marker, Mosaic, Text, Number };
 
 struct ToolContext {
     AnnotationDoc* doc = nullptr;
     QWidget* host = nullptr; // 文字工具在其上放置输入框
     Style style;
+    Qt::KeyboardModifiers modifiers; // 当前按下的修饰键（Shift 约束角度 / 比例）
 };
 
 // 标注工具（策略模式）：每个工具自己解释鼠标事件，完成时把图形提交给文档

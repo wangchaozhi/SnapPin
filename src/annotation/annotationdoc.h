@@ -18,6 +18,10 @@ public:
     // 图形已被实时拖动了 delta，这里只把这次移动记入撤销栈
     void commitMove(Shape* shape, const QPointF& delta);
 
+    // 修改图形的颜色 / 粗细。连续修改同一个图形（如滚轮调粗细）合并为一步撤销
+    void restyle(Shape* shape, const Style& style);
+    int nextNumber() const; // 下一个序号标记的数字
+
     Shape* shapeAt(const QPointF& pos) const; // 最上层命中的图形
     Shape* selected() const { return m_selected; }
     void setSelected(Shape* shape);
@@ -28,11 +32,13 @@ public:
 
 signals:
     void changed();
+    void selectionChanged(Shape* shape);
 
 private:
     friend class AddShapeCommand;
     friend class RemoveShapeCommand;
     friend class MoveShapeCommand;
+    friend class RestyleCommand;
 
     std::shared_ptr<Shape> find(Shape* shape) const;
     void insertAt(size_t index, const std::shared_ptr<Shape>& shape);

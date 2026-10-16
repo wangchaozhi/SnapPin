@@ -238,7 +238,7 @@ void AppContext::editPin(PinWindow* pin)
     if (m_session)
         return;
     const QImage image = pin->image();
-    const QPoint pos = pin->pos();
+    const QPoint pos = pin->imagePos();
     CaptureSession* session = newSession(pin);
     pin->hide();
     QPointer<CaptureSession> guard(session);
@@ -268,7 +268,7 @@ void AppContext::handleCaptureResult(const QImage& image, const QRect& globalRec
     case FinishAction::Pin:
         if (editTarget) {
             editTarget->setImage(image);
-            editTarget->move(globalRect.topLeft());
+            editTarget->moveImageTo(globalRect.topLeft());
             editTarget->show();
             editTarget->activateWindow();
         } else {

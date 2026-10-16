@@ -6,6 +6,7 @@
 
 #include <QImage>
 #include <QPixmap>
+#include <QTimer>
 #include <QWidget>
 #include <memory>
 
@@ -53,6 +54,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent*) override;
     void mouseDoubleClickEvent(QMouseEvent*) override;
     void keyPressEvent(QKeyEvent*) override;
+    void wheelEvent(QWheelEvent*) override;
     void showEvent(QShowEvent*) override;
     void leaveEvent(QEvent*) override;
 
@@ -61,6 +63,9 @@ private:
     void refreshHover();
     void paintMagnifier(QPainter& p) const;
     void paintSizeLabel(QPainter& p) const;
+    void paintWidthHint(QPainter& p) const;
+    void stepRegionHistory(int direction);
+    void applySelection(const QRect& r);
     void updateToolbarGeometry();
     QColor colorAtCursor() const;
     QPoint physicalCursor() const;
@@ -84,4 +89,8 @@ private:
     ToolContext m_toolCtx;
     RenderContext m_renderCtx;
     EditorToolbar* m_toolbar;
+
+    QTimer m_widthHintTimer; // 运行期间在光标处显示粗细预览
+    int m_wheelAccum = 0;
+    int m_regionIndex = -1;  // 区域历史中当前显示的位置，-1 表示还没切换过
 };

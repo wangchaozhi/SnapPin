@@ -75,6 +75,14 @@ public:
     std::unique_ptr<Shape> clone() const override { return std::make_unique<ArrowShape>(*this); }
 };
 
+class LineShape : public DragShape {
+public:
+    using DragShape::DragShape;
+    void paint(QPainter& p, const RenderContext& ctx) const override;
+    bool hitTest(const QPointF& pos, qreal tolerance) const override;
+    std::unique_ptr<Shape> clone() const override { return std::make_unique<LineShape>(*this); }
+};
+
 class MosaicShape : public DragShape {
 public:
     using DragShape::DragShape;
@@ -83,6 +91,7 @@ public:
 
 private:
     mutable QRect m_cacheRect; // 预览拖拽时避免每帧重新取样
+    mutable int m_cacheBlock = 0;
     mutable QImage m_cache;
 };
 
@@ -112,4 +121,23 @@ public:
 
     QPointF pos; // 文字左上角
     QString text;
+};
+
+// 序号标记：实心圆 + 白色数字，可拖出一条指向目标的尾巴
+class NumberShape : public Shape {
+public:
+    using Shape::Shape;
+    void paint(QPainter& p, const RenderContext& ctx) const override;
+    QRectF boundingRect() const override;
+    bool hitTest(const QPointF& pos, qreal tolerance) const override;
+    bool isValid() const override { return number > 0; }
+    void translate(const QPointF& d) override { center += d; tail += d; }
+    std::unique_ptr<Shape> clone() const override { return std::make_unique<NumberShape>(*this); }
+
+    qreal radius() const { return 9 + style.width * 1.5; }
+    bool hasTail() const;
+
+    QPointF center;
+    QPointF tail; // 与 center 重合表示没有尾巴
+    int number = 0;
 };

@@ -24,7 +24,7 @@ PinWindow* PinManager::pin(const QImage& image, const QPoint& globalTopLeft)
     });
     m_pins.append(w);
 
-    w->move(globalTopLeft);
+    w->moveImageTo(globalTopLeft);
     if (m_hidden) { // 新贴图出现时恢复所有隐藏的贴图
         m_hidden = false;
         for (const auto& p : std::as_const(m_pins))

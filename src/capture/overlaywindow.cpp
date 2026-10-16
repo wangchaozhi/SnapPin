@@ -10,10 +10,47 @@
 #include <QMap>
 #include <QPainter>
 #include <QScreen>
+#include <QSettings>
+#include <QWheelEvent>
 
 namespace {
 constexpr int kMagnifierCells = 17; // 放大区域：17×17 物理像素
 constexpr int kMagnifierCell = 8;   // 每个像素放大为 8×8
+constexpr int kWidthHintMs = 900;   // 滚轮调粗细后，光标处的粗细预览显示多久
+constexpr qreal kMinWidth = 1;
+constexpr qreal kMaxWidth = 30;
+constexpr int kRegionHistoryMax = 20;
+const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
+
+bool g_colorHex = false; // 放大镜颜色显示 / 复制格式：HEX 或 RGB，本次运行内记住
+
+QString colorText(const QColor& c)
+{
+    return g_colorHex ? c.name().toUpper() : QStringLiteral("%1, %2, %3").arg(c.red()).arg(c.green()).arg(c.blue());
+}
+
+// 截图区域历史（全局逻辑坐标，新的在前），按 , 和 . 切换
+QList<QRect> loadRegionHistory()
+{
+    QList<QRect> list;
+    for (const QString& s : QSettings().value(kRegionHistoryKey).toStringList()) {
+        const QStringList v = s.split(QLatin1Char(','));
+        if (v.size() == 4)
+            list.append(QRect(v[0].toInt(), v[1].toInt(), v[2].toInt(), v[3].toInt()));
+    }
+    return list;
+}
+
+void pushRegionHistory(const QRect& r)
+{
+    QList<QRect> list = loadRegionHistory();
+    list.removeAll(r);
+    list.prepend(r);
+    QStringList out;
+    for (int i = 0; i < list.size() && i < kRegionHistoryMax; ++i)
+        out << QStringLiteral("%1,%2,%3,%4").arg(list[i].x()).arg(list[i].y()).arg(list[i].width()).arg(list[i].height());
+    QSettings().setValue(kRegionHistoryKey, out);
+}
 } // namespace
 
 OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<DetectedWindow> windows)
@@ -40,7 +77,19 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     connect(m_toolbar, &EditorToolbar::toolClicked, this, [this](ToolType t) {
         selectTool(t == m_toolType ? ToolType::None : t);
     });
-    connect(m_toolbar, &EditorToolbar::styleChanged, this, [this](const Style& s) { m_toolCtx.style = s; });
+    // 选中了已画的图形时，颜色 / 粗细改到这个图形上（可撤销）；否则改当前工具的样式
+    connect(m_toolbar, &EditorToolbar::styleChanged, this, [this](const Style& s) {
+        if (Shape* shape = m_doc.selected())
+            m_doc.restyle(shape, s);
+        else
+            m_toolCtx.style = s;
+    });
+    connect(&m_doc, &AnnotationDoc::selectionChanged, this, [this](Shape* shape) {
+        m_toolbar->setStyle(shape ? shape->style : m_toolCtx.style);
+    });
+    m_widthHintTimer.setSingleShot(true);
+    m_widthHintTimer.setInterval(kWidthHintMs);
+    connect(&m_widthHintTimer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
     connect(m_toolbar, &EditorToolbar::pinRequested, this, [this] { finish(FinishAction::Pin); });
     connect(m_toolbar, &EditorToolbar::saveRequested, this, [this] { finish(FinishAction::Save); });
     connect(m_toolbar, &EditorToolbar::longCaptureRequested, this, [this] { finish(FinishAction::LongCapture); });
@@ -179,6 +228,7 @@ void OverlayWindow::finish(FinishAction action)
     if (m_tool)
         m_tool->finish(m_toolCtx);
     const QRect global(m_screen->geometry().topLeft() + m_selection.topLeft(), m_selection.size());
+    pushRegionHistory(global);
     emit finished(renderResult(), global, action);
 }
 
@@ -226,6 +276,97 @@ void OverlayWindow::paintEvent(QPaintEvent*)
 
     if (m_state->showMagnifier() && m_cursorInside)
         paintMagnifier(p);
+    if (m_widthHintTimer.isActive() && m_cursorInside)
+        paintWidthHint(p);
+}
+
+void OverlayWindow::paintWidthHint(QPainter& p) const
+{
+    // 光标处按实际效果显示当前粗细：线宽、荧光笔笔宽、马赛克块、序号圆、文字字号
+    const qreal w = m_toolCtx.style.width;
+    qreal d = w;
+    QString label = QString::number(w);
+    switch (m_toolType) {
+    case ToolType::Marker: d = w * 4; break;
+    case ToolType::Mosaic: d = w * 3; break;
+    case ToolType::Number: d = 2 * (9 + w * 1.5); break;
+    case ToolType::Text:
+        d = 0;
+        label = tr("字号 %1").arg(TextShape::fontFor(m_toolCtx.style).pixelSize());
+        break;
+    default: break;
+    }
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    const QPointF c = m_cursor;
+    if (d > 0) {
+        p.setPen(QPen(Qt::white, 1));
+        QColor fill = m_toolCtx.style.color;
+        fill.setAlpha(m_toolType == ToolType::Marker ? 110 : 200);
+        p.setBrush(fill);
+        if (m_toolType == ToolType::Mosaic)
+            p.drawRect(QRectF(c.x() - d / 2, c.y() - d / 2, d, d));
+        else
+            p.drawEllipse(c, d / 2, d / 2);
+    }
+    const QFontMetrics fm(font());
+    QRectF box(0, 0, fm.horizontalAdvance(label) + 10, fm.height() + 4);
+    box.moveTopLeft(c + QPointF(qMax(d / 2, 6.0) + 6, -box.height() / 2));
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 170));
+    p.drawRoundedRect(box, 3, 3);
+    p.setPen(Qt::white);
+    p.drawText(box, Qt::AlignCenter, label);
+    p.restore();
+}
+
+void OverlayWindow::wheelEvent(QWheelEvent* e)
+{
+    // 滚轮调粗细：选中了已画的图形时改它，否则改当前工具
+    Shape* shape = m_doc.selected();
+    if (!hasSelection() || (!shape && m_toolType == ToolType::None)) {
+        QWidget::wheelEvent(e);
+        return;
+    }
+    m_wheelAccum += e->angleDelta().y();
+    const int steps = m_wheelAccum / 120; // 高精度滚轮 / 触控板的小增量累计成整格
+    if (steps == 0)
+        return;
+    m_wheelAccum -= steps * 120;
+
+    Style s = shape ? shape->style : m_toolCtx.style;
+    s.width = qBound(kMinWidth, s.width + steps, kMaxWidth);
+    if (shape) {
+        m_doc.restyle(shape, s);
+    } else {
+        m_toolCtx.style = s;
+        m_toolbar->setStyle(s);
+        m_widthHintTimer.start();
+        update();
+    }
+}
+
+void OverlayWindow::stepRegionHistory(int direction)
+{
+    // , 往更早、. 往更近；只取落在本屏上的区域
+    const QList<QRect> history = loadRegionHistory();
+    const QRect screenRect = m_screen->geometry();
+    for (int i = m_regionIndex + direction; i >= 0 && i < history.size(); i += direction) {
+        const QRect local = history[i].translated(-screenRect.topLeft()) & rect();
+        if (local.width() < 2 || local.height() < 2)
+            continue;
+        m_regionIndex = i;
+        applySelection(local);
+        return;
+    }
+}
+
+void OverlayWindow::applySelection(const QRect& r)
+{
+    if (m_toolType != ToolType::None && hasSelection())
+        setSelection(r); // 正在标注：只换区域，保留工具
+    else
+        presetSelection(r);
 }
 
 void OverlayWindow::paintSizeLabel(QPainter& p) const
@@ -254,7 +395,7 @@ void OverlayWindow::paintMagnifier(QPainter& p) const
     const int zoom = kMagnifierCells * kMagnifierCell;
 
     const QFontMetrics fm(font());
-    const int infoH = fm.height() * 2 + 10;
+    const int infoH = fm.height() * 3 + 10;
     QRect box(0, 0, zoom, zoom + infoH);
     QPoint at = m_cursor + QPoint(20, 20);
     if (at.x() + box.width() > width())
@@ -284,9 +425,9 @@ void OverlayWindow::paintMagnifier(QPainter& p) const
     p.fillRect(QRect(info.left() + 6, info.top() + 6, 12, 12), color);
     p.setPen(Qt::white);
     p.drawText(info.adjusted(24, 3, -4, 0), Qt::AlignLeft | Qt::AlignTop,
-               QStringLiteral("(%1, %2)\nRGB(%3, %4, %5)")
-                   .arg(phys.x()).arg(phys.y())
-                   .arg(color.red()).arg(color.green()).arg(color.blue()));
+               QStringLiteral("(%1, %2)\n%3").arg(phys.x()).arg(phys.y()).arg(colorText(color)));
+    p.setPen(QColor(255, 255, 255, 140));
+    p.drawText(info.adjusted(6, 3, -4, -3), Qt::AlignLeft | Qt::AlignBottom, tr("Shift 切换格式 · C 复制"));
 
     p.setPen(QPen(QColor(0, 0, 0, 160), 1));
     p.drawRect(box.adjusted(0, 0, -1, -1));
@@ -389,6 +530,19 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
     }
 
     const bool ctrl = e->modifiers() & Qt::ControlModifier;
+    if (ctrl && e->key() == Qt::Key_A) { // 全屏
+        applySelection(rect());
+        return;
+    }
+    if (!ctrl && (e->key() == Qt::Key_Comma || e->key() == Qt::Key_Period)) { // 上一次 / 下一次的截图区域
+        stepRegionHistory(e->key() == Qt::Key_Comma ? 1 : -1);
+        return;
+    }
+    if (e->key() == Qt::Key_Shift && !e->isAutoRepeat() && !hasSelection()) { // 切换颜色格式
+        g_colorHex = !g_colorHex;
+        update();
+        return;
+    }
     if (hasSelection()) {
         if ((ctrl && e->key() == Qt::Key_C) || e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
             finish(FinishAction::Copy);
@@ -407,8 +561,8 @@ void OverlayWindow::keyPressEvent(QKeyEvent* e)
             return;
         }
     } else if (e->key() == Qt::Key_C && !ctrl) {
-        // 无选区时按 C：复制光标处颜色并退出
-        QGuiApplication::clipboard()->setText(colorAtCursor().name().toUpper());
+        // 无选区时按 C：按当前格式复制光标处颜色并退出
+        QGuiApplication::clipboard()->setText(colorText(colorAtCursor()));
         cancel();
         return;
     }
