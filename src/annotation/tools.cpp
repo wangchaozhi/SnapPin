@@ -5,8 +5,9 @@
 #include <QEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
-#include <QLineEdit>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QTextDocument>
 #include <QPointer>
 #include <cmath>
 #include <functional>
@@ -205,12 +206,15 @@ public:
         m_ctx = &ctx;
         m_style = ctx.style;
 
-        auto* edit = new QLineEdit(ctx.host);
-        edit->setFrame(false);
-        edit->setTextMargins(0, 0, 0, 0);
+        // 多行输入：回车换行，Ctrl+回车或点击别处提交，Esc 取消
+        auto* edit = new QPlainTextEdit(ctx.host);
+        edit->setFrameShape(QFrame::NoFrame);
+        edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        edit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        edit->setLineWrapMode(QPlainTextEdit::NoWrap);
+        edit->document()->setDocumentMargin(0);
         edit->move(pos.toPoint() - QPoint(2, 2));
-        QObject::connect(edit, &QLineEdit::textChanged, edit, [this] { fitEditor(); });
-        QObject::connect(edit, &QLineEdit::returnPressed, edit, [this] { if (m_ctx) commit(*m_ctx); });
+        QObject::connect(edit, &QPlainTextEdit::textChanged, edit, [this] { fitEditor(); });
         edit->installEventFilter(this);
         m_editor = edit;
         applyEditorStyle();
@@ -231,9 +235,16 @@ public:
 protected:
     bool eventFilter(QObject* obj, QEvent* e) override
     {
-        if (obj == m_editor && e->type() == QEvent::KeyPress
-            && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape) {
+        if (obj != m_editor || e->type() != QEvent::KeyPress)
+            return false;
+        const auto* ke = static_cast<QKeyEvent*>(e);
+        if (ke->key() == Qt::Key_Escape) {
             discard(); // Esc 只取消当前输入，不退出截图
+            return true;
+        }
+        if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) && (ke->modifiers() & Qt::ControlModifier)) {
+            if (m_ctx)
+                commit(*m_ctx);
             return true;
         }
         return false;
@@ -243,28 +254,33 @@ private:
     void applyEditorStyle()
     {
         m_editor->setFont(TextShape::fontFor(m_style));
-        m_editor->setStyleSheet(QStringLiteral("QLineEdit{background:rgba(255,255,255,40);color:%1;"
+        m_editor->setStyleSheet(QStringLiteral("QPlainTextEdit{background:rgba(255,255,255,40);color:%1;"
                                                "border:1px dashed %1;padding:0px;}")
                                     .arg(m_style.color.name()));
         fitEditor();
     }
     void fitEditor()
     {
+        // 随内容伸缩：宽度取最长一行，高度按行数
         const QFontMetrics m(m_editor->font());
-        m_editor->resize(qMax(m.averageCharWidth() * 8, m.horizontalAdvance(m_editor->text()) + m.averageCharWidth() * 2),
-                         m.height() + 6);
+        const QStringList lines = m_editor->toPlainText().split(QLatin1Char('\n'));
+        int widest = 0;
+        for (const QString& line : lines)
+            widest = qMax(widest, m.horizontalAdvance(line));
+        m_editor->resize(qMax(m.averageCharWidth() * 8, widest + m.averageCharWidth() * 2),
+                         m.lineSpacing() * int(lines.size()) + 8);
     }
 
     void commit(ToolContext& ctx)
     {
         if (!m_editor)
             return;
-        QLineEdit* edit = m_editor;
-        m_editor = nullptr; // 先置空，防止 returnPressed 与焦点变化重复提交
+        QPlainTextEdit* edit = m_editor;
+        m_editor = nullptr; // 先置空，防止重复提交
         auto shape = std::make_unique<TextShape>(m_style);
-        const QFontMetrics fm(edit->font());
-        shape->pos = QPointF(edit->x() + 3, edit->y() + (edit->height() - fm.height()) / 2.0);
-        shape->text = edit->text();
+        // 文字区域（viewport）在输入框里的偏移就是边框宽度，与绘制位置一一对应
+        shape->pos = QPointF(edit->pos() + edit->viewport()->pos());
+        shape->text = edit->toPlainText();
         edit->hide();
         edit->deleteLater();
         if (shape->isValid())
@@ -276,13 +292,13 @@ private:
     {
         if (!m_editor)
             return;
-        QLineEdit* edit = m_editor;
+        QPlainTextEdit* edit = m_editor;
         m_editor = nullptr;
         edit->hide();
         edit->deleteLater();
     }
 
-    QPointer<QLineEdit> m_editor;
+    QPointer<QPlainTextEdit> m_editor;
     ToolContext* m_ctx = nullptr;
     Style m_style;
 };

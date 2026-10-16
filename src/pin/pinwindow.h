@@ -1,9 +1,21 @@
 #pragma once
 
 #include <QImage>
+#include <QTimer>
 #include <QWidget>
 
-// 贴图窗口：无边框置顶，带阴影；可拖动、滚轮缩放、Ctrl+滚轮调透明度、旋转和翻转
+// 关闭时的状态，用于“恢复关闭的贴图”
+struct PinSnapshot {
+    QImage source;
+    int rotation = 0;
+    bool flipH = false;
+    bool flipV = false;
+    qreal scale = 1.0;
+    qreal opacity = 1.0;
+    QPoint imagePos;
+};
+
+// 贴图窗口：无边框置顶，带阴影；可拖动、滚轮缩放、Ctrl+滚轮调透明度、旋转和翻转、缩略图、鼠标穿透
 class PinWindow : public QWidget {
     Q_OBJECT
 public:
@@ -15,9 +27,19 @@ public:
     QPoint imagePos() const;
     void moveImageTo(const QPoint& globalTopLeft);
 
+    // 鼠标穿透：点击直接落到下面的窗口，贴图只当参考图；穿透后只能从托盘菜单取消
+    void setClickThrough(bool on);
+    bool clickThrough() const;
+    PinSnapshot snapshot() const;
+    void applySnapshot(const PinSnapshot& s);
+
 signals:
     void closeAllRequested();
     void editRequested();
+    void closing(const PinSnapshot& state);
+
+protected:
+    void closeEvent(QCloseEvent* e) override;
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -33,6 +55,8 @@ protected:
 
 private:
     void setScale(qreal scale, const QPoint& anchorGlobal);
+    void toggleThumbnail();
+    void showHint(const QString& text);
     void rotate(int quarterTurns);
     void flip(bool horizontal);
     void updateView(); // 按旋转、翻转生成显示用的图，保持图片中心不动
@@ -46,6 +70,10 @@ private:
     bool m_flipH = false;
     bool m_flipV = false;
     qreal m_scale = 1.0;
+    bool m_thumbnail = false;
+    qreal m_scaleBeforeThumbnail = 1.0;
+    QString m_hint;
+    QTimer m_hintTimer;
     bool m_dragging = false;
     QPoint m_dragOffset;
 };

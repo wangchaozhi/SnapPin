@@ -9,6 +9,7 @@ const QList<AppSettings::HotkeyDefault>& AppSettings::hotkeyDefaults()
         {QStringLiteral("pin_clipboard"), QStringLiteral("F3")},
         {QStringLiteral("toggle_pins"), QStringLiteral("Shift+F3")},
         {QStringLiteral("history"), QString()},
+        {QStringLiteral("restore_pin"), QString()},
     };
     return defaults;
 }

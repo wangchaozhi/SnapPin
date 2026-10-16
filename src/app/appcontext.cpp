@@ -96,6 +96,14 @@ void AppContext::setupActions()
     });
     m_actions.add(QStringLiteral("toggle_pins"), tr("隐藏/显示所有贴图"), [this] { m_pins->toggleVisible(); });
     m_actions.add(QStringLiteral("close_pins"), tr("关闭所有贴图"), [this] { m_pins->closeAll(); });
+    m_actions.add(QStringLiteral("restore_pin"), tr("恢复关闭的贴图"), [this] {
+        if (!m_pins->restoreClosed())
+            m_tray->showMessage(tr("SnapPin"), tr("没有可恢复的贴图"), QSystemTrayIcon::Information, 2000);
+    });
+    m_actions.add(QStringLiteral("pins_interactive"), tr("取消贴图的鼠标穿透"), [this] {
+        if (m_pins->clearClickThrough() == 0)
+            m_tray->showMessage(tr("SnapPin"), tr("没有设置了鼠标穿透的贴图"), QSystemTrayIcon::Information, 2000);
+    });
     m_actions.add(QStringLiteral("history"), tr("截图历史"), [this] { openHistory(); });
     m_actions.add(QStringLiteral("settings"), tr("设置..."), [this] { openSettings(); });
     m_actions.add(QStringLiteral("check_update"), tr("检查更新..."), [this] { m_updater->check(true); });
@@ -125,7 +133,7 @@ void AppContext::setupTray()
 void AppContext::rebuildTrayMenu()
 {
     static const char* const kMenu[] = {"capture", "capture_delayed", "pin_clipboard", nullptr,
-                                        "history", "toggle_pins", "close_pins", nullptr,
+                                        "history", "toggle_pins", "close_pins", "restore_pin", "pins_interactive", nullptr,
                                         "settings", "check_update", "quit"};
     m_trayMenu->clear();
     for (const char* id : kMenu) {

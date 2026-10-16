@@ -14,16 +14,54 @@ PinManager::~PinManager()
     closeAll();
 }
 
-PinWindow* PinManager::pin(const QImage& image, const QPoint& globalTopLeft)
+namespace {
+constexpr int kMaxClosed = 20;
+}
+
+PinWindow* PinManager::create(const QImage& image)
 {
     auto* w = new PinWindow(image);
     connect(w, &PinWindow::closeAllRequested, this, &PinManager::closeAll);
     connect(w, &PinWindow::editRequested, this, [this, w] { emit editRequested(w); });
+    connect(w, &PinWindow::closing, this, [this](const PinSnapshot& s) {
+        m_closed.append(s);
+        if (m_closed.size() > kMaxClosed)
+            m_closed.removeFirst();
+    });
     connect(w, &QObject::destroyed, this, [this] {
         m_pins.removeIf([](const QPointer<PinWindow>& p) { return p.isNull(); });
     });
     m_pins.append(w);
+    return w;
+}
 
+bool PinManager::restoreClosed()
+{
+    if (m_closed.isEmpty())
+        return false;
+    PinWindow* w = create(QImage());
+    w->applySnapshot(m_closed.takeLast());
+    w->show();
+    w->raise();
+    w->activateWindow();
+    return true;
+}
+
+int PinManager::clearClickThrough()
+{
+    int n = 0;
+    for (const auto& p : std::as_const(m_pins)) {
+        if (p && p->clickThrough()) {
+            p->setClickThrough(false);
+            ++n;
+        }
+    }
+    return n;
+}
+
+PinWindow* PinManager::pin(const QImage& image, const QPoint& globalTopLeft)
+{
+    PinWindow* w = create(image);
     w->moveImageTo(globalTopLeft);
     if (m_hidden) { // 新贴图出现时恢复所有隐藏的贴图
         m_hidden = false;
