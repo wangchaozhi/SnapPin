@@ -23,6 +23,7 @@ constexpr qreal kMaxWidth = 30;
 constexpr int kRegionHistoryMax = 20;
 constexpr int kMinImageRegion = 8; // 从截图像素识别出的框，比这还小（逻辑像素）的不用
 constexpr int kBlockGap = 8; // 内容块之间的空白超过它（逻辑像素）才算分开的两块
+constexpr int kHoverSettleMs = 120; // 光标还在当前框里时，新识别到的框要稳定这么久才切换
 constexpr int kSnapDistance = 5; // 拖动选区边时，离窗口 / 控件边缘这么近就吸附过去（逻辑像素）
 const QString kRegionHistoryKey = QStringLiteral("capture/regionHistory");
 
@@ -131,6 +132,9 @@ OverlayWindow::OverlayWindow(QScreen* screen, const QPixmap& shot, QList<Detecte
     connect(&m_doc, &AnnotationDoc::selectionChanged, this, [this](Shape* shape) {
         m_toolbar->setStyle(shape ? shape->style : m_toolCtx.style);
     });
+    m_hoverTimer.setSingleShot(true);
+    m_hoverTimer.setInterval(kHoverSettleMs);
+    connect(&m_hoverTimer, &QTimer::timeout, this, [this] { setHover(m_pendingHover); });
     m_widthHintTimer.setSingleShot(true);
     m_widthHintTimer.setInterval(kWidthHintMs);
     connect(&m_widthHintTimer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
@@ -236,8 +240,21 @@ int OverlayWindow::snap(int value, Qt::Orientation o, bool farEdge, const QPoint
     return best;
 }
 
+void OverlayWindow::proposeHover(const QRect& r, const QPoint& cursor)
+{
+    if (r == m_hover || m_hover.isEmpty() || !m_hover.contains(cursor)) {
+        setHover(r);
+        return;
+    }
+    if (!m_hoverTimer.isActive() || r != m_pendingHover) {
+        m_pendingHover = r;
+        m_hoverTimer.start();
+    }
+}
+
 void OverlayWindow::setHover(const QRect& r)
 {
+    m_hoverTimer.stop();
     if (r != m_hover) {
         m_hover = r;
         update();

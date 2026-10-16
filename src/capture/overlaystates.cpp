@@ -67,8 +67,7 @@ void IdleState::mouseMove(QMouseEvent* e)
         w->setState(std::move(next));
         return;
     }
-    m_hover = w->windowAt(pos);
-    w->setHover(m_hover);
+    w->proposeHover(w->windowAt(pos), pos);
 }
 
 void IdleState::mouseRelease(QMouseEvent* e)
@@ -76,20 +75,21 @@ void IdleState::mouseRelease(QMouseEvent* e)
     if (e->button() != Qt::LeftButton || !m_pressed)
         return;
     m_pressed = false;
-    // 单击：直接选中识别到的窗口
-    if (!m_hover.isEmpty()) {
-        w->setSelection(m_hover);
+    // 单击：直接选中当前显示的框（和看到的一致，即使新识别到的框还在等稳定）
+    if (const QRect hover = w->hover(); !hover.isEmpty()) {
+        w->setSelection(hover);
         w->setState(std::make_unique<AdjustingState>(w));
     }
 }
 
 void IdleState::paint(QPainter& p) const
 {
-    if (m_hover.isEmpty())
+    const QRect hover = w->hover();
+    if (hover.isEmpty())
         return;
     p.save();
     p.setPen(QPen(kAccent, 2));
-    p.drawRect(m_hover.adjusted(1, 1, -1, -1));
+    p.drawRect(hover.adjusted(1, 1, -1, -1));
     p.restore();
 }
 

@@ -38,7 +38,6 @@ public:
 private:
     bool m_pressed = false;
     QPoint m_pressPos;
-    QRect m_hover;
 };
 
 class SelectingState : public OverlayState {

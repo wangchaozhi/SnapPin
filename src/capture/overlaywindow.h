@@ -30,6 +30,10 @@ public:
     // farEdge 表示右 / 下边；near 用来确定光标所在的窗口（只吸附它内部的控件）
     int snap(int value, Qt::Orientation o, bool farEdge, const QPoint& near) const;
     void setHover(const QRect& r);
+    // 鼠标移动时识别到的新框：光标离开当前框时立即换；还在当前框里时（在区域和里面的内容块之间、
+    // 跨过空白），新框要稳定一小段时间才换，避免框选来回跳
+    void proposeHover(const QRect& r, const QPoint& cursor);
+    QRect hover() const { return m_hover; }
     QRect selection() const { return m_selection; }
     bool hasSelection() const { return !m_selection.isEmpty(); }
     void setSelection(const QRect& r);
@@ -80,6 +84,8 @@ private:
     mutable std::unique_ptr<ImageRegionDetector> m_imageRegions; // 按截图像素识别框，第一次悬停时才建
 
     QRect m_hover;
+    QRect m_pendingHover;
+    QTimer m_hoverTimer;
     QRect m_selection;
     QPoint m_cursor;
     bool m_cursorInside = false;
