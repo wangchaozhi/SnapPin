@@ -76,6 +76,7 @@ private:
     qreal m_scale = 1.0;
     bool m_thumbnail = false;
     qreal m_scaleBeforeThumbnail = 1.0;
+    qreal m_opacityBeforeClickThrough = 1.0;
     QString m_hint;
     QTimer m_hintTimer;
     bool m_dragging = false;

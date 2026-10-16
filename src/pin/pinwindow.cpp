@@ -16,6 +16,7 @@ namespace {
 constexpr int kShadow = 10;         // 阴影宽度（逻辑像素），窗口比图片四周各大这么多
 constexpr qreal kThumbnail = 64.0;  // 缩略图最长边
 constexpr int kHintMs = 800;        // 缩放 / 不透明度提示显示时长
+constexpr qreal kClickThroughOpacity = 0.5; // 鼠标穿透时贴图最多这么不透明
 }
 
 PinWindow::PinWindow(const QImage& image)
@@ -232,6 +233,13 @@ void PinWindow::setClickThrough(bool on)
 {
     if (clickThrough() == on)
         return;
+    // 穿透时变淡，透出后面的窗口；取消时恢复原来的透明度
+    if (on) {
+        m_opacityBeforeClickThrough = windowOpacity();
+        setWindowOpacity(qMin(m_opacityBeforeClickThrough, kClickThroughOpacity));
+    } else {
+        setWindowOpacity(m_opacityBeforeClickThrough);
+    }
     // 改窗口标志会把窗口隐藏，需要重新显示
     const bool visible = isVisible();
     setWindowFlag(Qt::WindowTransparentForInput, on);
@@ -248,7 +256,9 @@ bool PinWindow::clickThrough() const
 
 PinSnapshot PinWindow::snapshot() const
 {
-    return {m_source, m_rotation, m_flipH, m_flipV, m_scale, windowOpacity(), imagePos()};
+    // 穿透时的变淡是临时的，记下穿透前的透明度
+    const qreal opacity = clickThrough() ? m_opacityBeforeClickThrough : windowOpacity();
+    return {m_source, m_rotation, m_flipH, m_flipV, m_scale, opacity, imagePos()};
 }
 
 void PinWindow::applySnapshot(const PinSnapshot& s)
