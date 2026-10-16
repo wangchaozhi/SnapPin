@@ -287,7 +287,7 @@ Drawer drawerFor(ToolIcon id)
     return [](QPainter&, const Ink&) {};
 }
 
-// 工具栏从左到右依次用彩虹马卡龙色（填充按钮用和复制按钮底纸一样的紫色）；撤销 / 重做用中性灰
+// 工具栏从左到右依次用彩虹马卡龙色（填充按钮用薄荷绿）；撤销 / 重做用中性灰
 Hue hueFor(ToolIcon id)
 {
     switch (id) {
@@ -302,6 +302,7 @@ Hue hueFor(ToolIcon id)
         return kYellow;
     case ToolIcon::Arrow:
     case ToolIcon::Pin:
+    case ToolIcon::Fill:
         return kMint;
     case ToolIcon::Pen:
     case ToolIcon::Save:
@@ -309,7 +310,6 @@ Hue hueFor(ToolIcon id)
     case ToolIcon::Marker:
         return kBlue;
     case ToolIcon::Mosaic:
-    case ToolIcon::Fill:
         return kLavender;
     case ToolIcon::Eraser:
         return kPink;
