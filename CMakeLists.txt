@@ -163,13 +163,18 @@ snappin_download(${_ocr_url}/det/ch_PP-OCRv5_det_mobile.onnx ${_deps}/ocr/det.on
 snappin_download(${_ocr_url}/rec/ch_PP-OCRv5_rec_mobile.onnx ${_deps}/ocr/rec.onnx
                  5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5)
 
-# OCR 引擎（程序和测试共用）；模型编进资源 :/ocr/，三个平台的打包都不用额外处理模型文件
+# OCR 引擎（程序和测试共用）
 add_library(snappin_ocr STATIC src/ocr/ocrtext.h src/ocr/ocrtext.cpp src/ocr/ppocr.h src/ocr/ppocr.cpp)
 target_include_directories(snappin_ocr PUBLIC src)
 target_link_libraries(snappin_ocr PUBLIC Qt6::Gui onnxruntime)
-function(snappin_add_ocr_models target)
-    qt_add_resources(${target} ${target}_ocr_models PREFIX /ocr BASE ${_deps}/ocr BIG_RESOURCES OPTIONS -no-compress
-                     FILES ${_deps}/ocr/det.onnx ${_deps}/ocr/rec.onnx)
+# 模型是程序外的文件（不编进可执行文件，否则 macOS 通用二进制的两个切片各存一份）：
+# macOS 放进 .app/Contents/Resources/ocr，Windows 和本机构建放在程序旁边的 ocr/，Linux 安装到 share/snappin/ocr
+set(OCR_MODELS ${_deps}/ocr/det.onnx ${_deps}/ocr/rec.onnx)
+function(snappin_copy_ocr_models target)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target}>/ocr
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OCR_MODELS} $<TARGET_FILE_DIR:${target}>/ocr
+        VERBATIM)
 endfunction()
 
 # 把 ONNX Runtime 放到程序旁边：Windows 与 exe 同目录（优先于系统自带的旧版 onnxruntime.dll），macOS 放进 .app 的 Frameworks
@@ -181,8 +186,14 @@ function(snappin_deploy_ort target)
     endif()
 endfunction()
 
-qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES} ${APP_ICON_SOURCES})
-snappin_add_ocr_models(SnapPin)
+if(APPLE)
+    set(APP_OCR_MODELS ${OCR_MODELS})
+    set_source_files_properties(${OCR_MODELS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/ocr)
+endif()
+qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES} ${APP_ICON_SOURCES} ${APP_OCR_MODELS})
+if(NOT APPLE)
+    snappin_copy_ocr_models(SnapPin)
+endif()
 snappin_deploy_ort(SnapPin)
 
 target_include_directories(SnapPin PRIVATE src)
@@ -209,7 +220,7 @@ if(SNAPPIN_BUILD_TESTS)
     add_test(NAME ocrtext COMMAND ocrtext_test)
     qt_add_executable(ppocr_test tests/ppocr_test.cpp)
     target_link_libraries(ppocr_test PRIVATE snappin_ocr)
-    snappin_add_ocr_models(ppocr_test)
+    snappin_copy_ocr_models(ppocr_test)
     snappin_deploy_ort(ppocr_test)
     add_test(NAME ppocr COMMAND ppocr_test)
 endif()
@@ -257,6 +268,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(SnapPin PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
     file(REAL_PATH ${ORT_RUNTIME} _ort_real) # libonnxruntime.so.1 是符号链接，安装它指向的文件
     install(FILES ${_ort_real} DESTINATION lib RENAME libonnxruntime.so.1)
+    install(FILES ${OCR_MODELS} DESTINATION share/snappin/ocr)
     install(FILES resources/linux/snappin.desktop DESTINATION share/applications)
     install(FILES resources/linux/snappin.svg DESTINATION share/icons/hicolor/scalable/apps)
     foreach(size 256 512)

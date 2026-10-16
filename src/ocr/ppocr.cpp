@@ -1,5 +1,7 @@
 #include "ppocr.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QThread>
 
@@ -24,7 +26,20 @@ constexpr int kRecMaxWidth = 3200;
 constexpr int kRecBatch = 6;
 constexpr float kTextScore = 0.5f;    // 识别置信度低于它丢弃
 
-QByteArray readResource(const QString& path)
+// 模型目录：macOS 在 .app/Contents/Resources/ocr，Windows 和本机构建在程序旁边的 ocr/，Linux 安装版在 share/snappin/ocr。
+// 读进内存再交给 ONNX Runtime，不用处理各平台的路径编码（Windows 要宽字符）
+QString findModelDir()
+{
+    const QDir appDir(QCoreApplication::applicationDirPath());
+    for (const char* rel : {"../Resources/ocr", "ocr", "../share/snappin/ocr"}) {
+        const QString dir = appDir.filePath(QString::fromLatin1(rel));
+        if (QFile::exists(dir + QStringLiteral("/det.onnx")) && QFile::exists(dir + QStringLiteral("/rec.onnx")))
+            return QDir::cleanPath(dir);
+    }
+    return QString();
+}
+
+QByteArray readFile(const QString& path)
 {
     QFile f(path);
     return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
@@ -110,8 +125,9 @@ bool PpOcrEngine::load(QString* error)
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(std::clamp(QThread::idealThreadCount() / 2, 1, 4));
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        const QByteArray detModel = readResource(QStringLiteral(":/ocr/det.onnx"));
-        const QByteArray recModel = readResource(QStringLiteral(":/ocr/rec.onnx"));
+        const QString modelDir = findModelDir();
+        const QByteArray detModel = modelDir.isEmpty() ? QByteArray() : readFile(modelDir + QStringLiteral("/det.onnx"));
+        const QByteArray recModel = modelDir.isEmpty() ? QByteArray() : readFile(modelDir + QStringLiteral("/rec.onnx"));
         if (detModel.isEmpty() || recModel.isEmpty()) {
             *error = QStringLiteral("找不到文字识别模型");
             return false;
