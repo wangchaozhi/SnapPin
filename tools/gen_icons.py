@@ -17,7 +17,7 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ICONS = os.path.join(ROOT, "resources", "icons")
 SMALL_MAX = 32
-PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512]   # 程序内资源 + Linux
+PNG_SIZES = [256, 512]   # Linux 安装用
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 

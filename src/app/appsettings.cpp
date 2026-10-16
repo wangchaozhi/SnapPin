@@ -25,6 +25,7 @@ AppSettings AppSettings::load()
     a.historyMax = s.value(QStringLiteral("history/max"), a.historyMax).toInt();
     a.autoUpdate = s.value(QStringLiteral("update/auto"), a.autoUpdate).toBool();
     a.captureCursor = s.value(QStringLiteral("capture/cursor"), a.captureCursor).toBool();
+    a.iconPalette = s.value(QStringLiteral("appearance/iconPalette"), a.iconPalette).toString();
     // 保存相关的键由 imageutil 直接读取
     a.fileNamePattern = s.value(QStringLiteral("save/pattern"), a.fileNamePattern).toString();
     a.saveFormat = s.value(QStringLiteral("save/format"), a.saveFormat).toString();
@@ -43,6 +44,7 @@ void AppSettings::save() const
     s.setValue(QStringLiteral("history/max"), historyMax);
     s.setValue(QStringLiteral("update/auto"), autoUpdate);
     s.setValue(QStringLiteral("capture/cursor"), captureCursor);
+    s.setValue(QStringLiteral("appearance/iconPalette"), iconPalette);
     s.setValue(QStringLiteral("save/pattern"), fileNamePattern);
     s.setValue(QStringLiteral("save/format"), saveFormat);
     s.setValue(QStringLiteral("save/quality"), jpgQuality);

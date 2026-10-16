@@ -35,6 +35,7 @@ endif()
 set(CORE_SOURCES
     src/main.cpp
     src/app/appcontext.h src/app/appcontext.cpp
+    src/app/appicon.h src/app/appicon.cpp
     src/app/actionregistry.h src/app/actionregistry.cpp
     src/app/imageutil.h src/app/imageutil.cpp
     src/app/appsettings.h src/app/appsettings.cpp
@@ -104,12 +105,6 @@ elseif(APPLE)
 endif()
 
 qt_add_executable(SnapPin WIN32 MACOSX_BUNDLE ${CORE_SOURCES} ${PLATFORM_SOURCES} ${APP_ICON_SOURCES})
-# 托盘和窗口图标
-qt_add_resources(SnapPin app_icons FILES
-    resources/icons/png/snappin-16.png resources/icons/png/snappin-24.png resources/icons/png/snappin-32.png
-    resources/icons/png/snappin-48.png resources/icons/png/snappin-64.png resources/icons/png/snappin-128.png
-    resources/icons/png/snappin-256.png
-    PREFIX /icons BASE resources/icons/png)
 
 target_include_directories(SnapPin PRIVATE src)
 target_compile_definitions(SnapPin PRIVATE

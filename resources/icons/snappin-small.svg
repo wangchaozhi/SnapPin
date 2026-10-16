@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 512 512">
   <!-- 小尺寸（16–32px）版本：去掉虚线和阴影，色块加大 -->
-  <rect x="16" y="112" width="192" height="192" rx="28" fill="#5B8DEF"/>
-  <rect x="16" y="320" width="192" height="192" rx="28" fill="#8A7BEA"/>
-  <rect x="224" y="320" width="192" height="192" rx="28" fill="#3FAF5A"/>
-  <rect x="304" y="0" width="208" height="208" rx="28" fill="#E06C6C"/>
+  <rect x="16" y="112" width="192" height="192" rx="28" fill="#1F7A8C"/>
+  <rect x="16" y="320" width="192" height="192" rx="28" fill="#2BB3A3"/>
+  <rect x="224" y="320" width="192" height="192" rx="28" fill="#8FD3C3"/>
+  <rect x="304" y="0" width="208" height="208" rx="28" fill="#FF7A59"/>
 </svg>

@@ -18,6 +18,7 @@ struct AppSettings {
     int historyMax = 50;
     bool autoUpdate = true; // 启动后及每天检查一次更新
     bool captureCursor = false; // 截图里带上鼠标指针
+    QString iconPalette = QStringLiteral("sea"); // 托盘 / 窗口图标配色，见 appicon.h
 
     // 保存：文件名格式里 $...$ 之间按日期时间格式替换（与 Snipaste 相同的写法）
     QString fileNamePattern = QStringLiteral("SnapPin_$yyyyMMdd_HHmmss$");

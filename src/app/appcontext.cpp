@@ -1,5 +1,6 @@
 #include "appcontext.h"
 
+#include "appicon.h"
 #include "capture/capturesession.h"
 #include "capture/scrollcapture.h"
 #include "history/historystore.h"
@@ -28,15 +29,6 @@ constexpr int kCaptureDelayMs = 3000;
 constexpr int kPinHideDelayMs = 120; // 隐藏贴图后等 DWM 把它从屏幕上移除再截图
 constexpr int kFirstUpdateCheckMs = 10 * 1000;          // 启动后稍等再检查，不拖慢开机
 constexpr int kUpdateIntervalMs = 24 * 60 * 60 * 1000;  // 之后每天检查一次
-
-QIcon makeAppIcon()
-{
-    // 图标源文件在 resources/icons/*.svg，由 tools/gen_icons.py 生成各尺寸 PNG
-    QIcon icon;
-    for (int s : {16, 24, 32, 48, 64, 128, 256})
-        icon.addFile(QStringLiteral(":/icons/snappin-%1.png").arg(s), QSize(s, s));
-    return icon;
-}
 
 } // namespace
 
@@ -103,7 +95,7 @@ void AppContext::setupActions()
 void AppContext::setupTray()
 {
     m_trayMenu = std::make_unique<QMenu>();
-    m_tray = new QSystemTrayIcon(makeAppIcon(), this);
+    m_tray = new QSystemTrayIcon(makeAppIcon(m_settings.iconPalette), this);
     m_tray->setContextMenu(m_trayMenu.get());
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
         if (r == QSystemTrayIcon::Trigger)
@@ -117,7 +109,6 @@ void AppContext::setupTray()
         m_quickSavedFolder.clear();
     });
     m_tray->show();
-    QApplication::setWindowIcon(m_tray->icon());
 }
 
 void AppContext::rebuildTrayMenu()
@@ -152,6 +143,9 @@ void AppContext::applySettings()
     m_history->setMaxCount(m_settings.historyMax);
     registerHotkeys();
     rebuildTrayMenu();
+    const QIcon icon = makeAppIcon(m_settings.iconPalette);
+    m_tray->setIcon(icon);
+    QApplication::setWindowIcon(icon);
 
     if (m_settings.autoUpdate && !m_updateTimer->isActive()) {
         QTimer::singleShot(kFirstUpdateCheckMs, m_updater, [this] { m_updater->check(false); });

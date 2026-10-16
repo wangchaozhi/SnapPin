@@ -1,6 +1,7 @@
 #include "settingsdialog.h"
 
 #include "actionregistry.h"
+#include "appicon.h"
 #include "imageutil.h"
 #include "platform/platform.h"
 
@@ -59,6 +60,17 @@ QWidget* SettingsDialog::createGeneralPage(const QString& historyDir)
     m_autoUpdate->setChecked(m_settings.autoUpdate);
     startupLayout->addWidget(m_autoUpdate);
     layout->addWidget(startup);
+
+    auto* appearance = new QGroupBox(tr("外观"), page);
+    auto* appearanceForm = new QFormLayout(appearance);
+    m_iconPalette = new QComboBox(appearance);
+    m_iconPalette->setIconSize(QSize(24, 24));
+    for (const IconPalette& c : iconPalettes())
+        m_iconPalette->addItem(makeAppIcon(c.id), c.name, c.id);
+    m_iconPalette->setCurrentIndex(qMax(0, m_iconPalette->findData(m_settings.iconPalette)));
+    m_iconPalette->setToolTip(tr("托盘和窗口图标的配色；程序文件本身的图标固定为默认配色"));
+    appearanceForm->addRow(tr("图标配色："), m_iconPalette);
+    layout->addWidget(appearance);
 
     auto* capture = new QGroupBox(tr("截图"), page);
     auto* captureForm = new QFormLayout(capture);
@@ -175,6 +187,7 @@ AppSettings SettingsDialog::settings() const
     s.historyMax = m_historyMax->value();
     s.autoUpdate = m_autoUpdate->isChecked();
     s.captureCursor = m_cursor->isChecked();
+    s.iconPalette = m_iconPalette->currentData().toString();
     s.fileNamePattern = m_pattern->text().trimmed().isEmpty() ? AppSettings().fileNamePattern : m_pattern->text().trimmed();
     s.saveFormat = m_format->currentData().toString();
     s.jpgQuality = m_quality->value();

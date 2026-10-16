@@ -32,6 +32,7 @@ private:
     QCheckBox* m_history = nullptr;
     QSpinBox* m_historyMax = nullptr;
     QCheckBox* m_cursor = nullptr;
+    QComboBox* m_iconPalette = nullptr;
     QLineEdit* m_pattern = nullptr;
     QComboBox* m_format = nullptr;
     QSpinBox* m_quality = nullptr;
