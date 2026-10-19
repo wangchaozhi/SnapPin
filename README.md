@@ -35,7 +35,9 @@ macOS 上文中的 Ctrl 均为 Command；F 键在 Mac 键盘上可能需要按�
 从 [Releases](https://github.com/wangchaozhi/SnapPin/releases) 下载 `SnapPin-x.y.z-windows-x64.zip`，解压后运行 `SnapPin.exe`。
 新版本发布后程序会提示更新，确认后自动下载、替换并重启（三个平台都支持，重启后会提示更新结果）。
 
-macOS（14 及以上）下载 `SnapPin-x.y.z-macos-universal.zip`，解压后把 `SnapPin.app` 拖到“应用程序”。
+macOS（14 及以上，Apple 芯片）下载 `SnapPin-x.y.z-macos-arm64.zip`，解压后把 `SnapPin.app` 拖到“应用程序”。
+文字识别用的 ONNX Runtime 新版不再提供 Intel 版 macOS 库，所以从 0.2.41 起不再发布 Intel 版本；
+0.2.40 及更早的通用版（`macos-universal`）不会自动更新到 Apple 芯片版本，需要手动下载一次。
 安装包用固定的自签名证书签名（不是苹果开发者证书），第一次打开需要在“系统设置 > 隐私与安全性”里允许；之后升级时已授予的权限保持有效。程序需要两项权限（系统设置 > 隐私与安全性）：
 
 - **屏幕录制**：截屏必需，没有时只能截到桌面壁纸

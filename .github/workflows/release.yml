@@ -88,10 +88,10 @@ jobs:
           cache: true
 
       - name: Configure
-        # 官方 Qt 是通用二进制，同时出 Apple 芯片和 Intel 版本
+        # 只出 Apple 芯片版本：ONNX Runtime（文字识别）最新稳定版没有 Intel 版 macOS 库
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          -DCMAKE_OSX_ARCHITECTURES=arm64
           -DSNAPPIN_VERSION=${{ steps.ver.outputs.version }}
 
       - name: Build
@@ -130,12 +130,12 @@ jobs:
           if security find-identity -p codesigning | grep -q '"SnapPin Release"'; then identity="SnapPin Release"; fi
           codesign --force --deep --sign "$identity" build/SnapPin.app
           codesign -d -r- build/SnapPin.app
-          ditto -c -k --keepParent build/SnapPin.app "SnapPin-$v-macos-universal.zip"
+          ditto -c -k --keepParent build/SnapPin.app "SnapPin-$v-macos-arm64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: SnapPin-*-macos-universal.zip
+          path: SnapPin-*-macos-arm64.zip
 
   linux:
     # 在较老的系统上构建，AppImage 才能在更多发行版上运行（glibc 向后兼容）

@@ -29,7 +29,7 @@ QString assetSuffix()
 #if defined(Q_OS_WIN)
     return QStringLiteral("-windows-x64.zip");
 #elif defined(Q_OS_MACOS)
-    return QStringLiteral("-macos-universal.zip");
+    return QStringLiteral("-macos-arm64.zip"); // 只有 Apple 芯片版本
 #elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
     return QStringLiteral("-linux-x86_64.AppImage");
 #else

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # 发布构建由 CI 根据 tag（v1.2.3）传入版本号
-set(SNAPPIN_VERSION "0.2.40" CACHE STRING "Application version")
+set(SNAPPIN_VERSION "0.2.41" CACHE STRING "Application version")
 # 自动更新从这个仓库的 GitHub Releases 获取新版本
 set(SNAPPIN_GITHUB_REPO "wangchaozhi/SnapPin" CACHE STRING "owner/repo for update checks")
 # 版本号错了自动更新会反复提示，宁可构建失败
@@ -118,24 +118,29 @@ elseif(APPLE)
 endif()
 
 # 文字识别：PP-OCRv5（mobile）模型 + ONNX Runtime（CPU），配置时下载并校验 SHA256，放在构建目录的 _deps 里。
-# 1.23.2 是最后一个提供 macOS 通用二进制（arm64 + x86_64）的版本
-set(SNAPPIN_ORT_VERSION 1.23.2)
+# 用最新稳定版。它的 macOS 包只有 Apple 芯片（arm64），没有 Intel 版，所以 macOS 只构建 Apple 芯片版本
+set(SNAPPIN_ORT_VERSION 1.31.0)
 if(WIN32)
     set(_ort_pkg onnxruntime-win-x64-${SNAPPIN_ORT_VERSION})
     set(_ort_archive ${_ort_pkg}.zip)
-    set(_ort_sha256 0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd)
+    set(_ort_sha256 3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195)
 elseif(APPLE)
-    set(_ort_pkg onnxruntime-osx-universal2-${SNAPPIN_ORT_VERSION})
+    if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64"
+       OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64"))
+        message(FATAL_ERROR "ONNX Runtime ${SNAPPIN_ORT_VERSION} 没有 Intel 版 macOS 库，只能构建 Apple 芯片版本："
+                            "-DCMAKE_OSX_ARCHITECTURES=arm64")
+    endif()
+    set(_ort_pkg onnxruntime-osx-arm64-${SNAPPIN_ORT_VERSION})
     set(_ort_archive ${_ort_pkg}.tgz)
-    set(_ort_sha256 49ae8e3a66ccb18d98ad3fe7f5906b6d7887df8a5edd40f49eb2b14e20885809)
+    set(_ort_sha256 1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
     set(_ort_pkg onnxruntime-linux-aarch64-${SNAPPIN_ORT_VERSION})
     set(_ort_archive ${_ort_pkg}.tgz)
-    set(_ort_sha256 7c63c73560ed76b1fac6cff8204ffe34fe180e70d6582b5332ec094810241e5c)
+    set(_ort_sha256 c5b8b3cca31f3d643a3b313b8f42e2d0f16a4fcefd02cda343d97bd5306afaab)
 else()
     set(_ort_pkg onnxruntime-linux-x64-${SNAPPIN_ORT_VERSION})
     set(_ort_archive ${_ort_pkg}.tgz)
-    set(_ort_sha256 1fa4dcaef22f6f7d5cd81b28c2800414350c10116f5fdd46a2160082551c5f9b)
+    set(_ort_sha256 cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57)
 endif()
 set(_deps ${CMAKE_BINARY_DIR}/_deps)
 
