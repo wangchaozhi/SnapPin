@@ -24,6 +24,7 @@
 #include <QMenu>
 #include <QUrl>
 #include <QScreen>
+#include <QSignalBlocker>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
@@ -150,7 +151,7 @@ void AppContext::rebuildTrayMenu()
 {
     static const char* const kMenu[] = {"capture", "ocr_capture", "translate_capture", "pin_clipboard", nullptr,
                                         "history", "toggle_pins", "close_pins", "restore_pin", "toggle_click_through", nullptr,
-                                        "settings", "check_update", "quit"};
+                                        "autostart", "settings", "check_update", "quit"};
     m_trayMenu->clear();
     for (const char* id : kMenu) {
         if (!id) {
@@ -158,6 +159,22 @@ void AppContext::rebuildTrayMenu()
             continue;
         }
         const QString actionId = QString::fromLatin1(id);
+        if (actionId == QLatin1String("autostart")) {
+            // 开机自启：直接读写系统里的启动项（和设置里的“开机时自动启动”是同一个开关）
+            if (!autostartSupported())
+                continue;
+            QAction* a = m_trayMenu->addAction(tr("开机自启"));
+            a->setCheckable(true);
+            a->setChecked(autostartEnabled());
+            connect(a, &QAction::toggled, this, [this, a](bool on) {
+                if (setAutostartEnabled(on))
+                    return;
+                const QSignalBlocker block(a);
+                a->setChecked(!on);
+                m_tray->showMessage(tr("SnapPin"), tr("无法修改开机自启设置"), QSystemTrayIcon::Warning, 3000);
+            });
+            continue;
+        }
         // 鼠标穿透用快捷键切换；只有没设快捷键时才放进托盘菜单，免得穿透后没法恢复
         if (actionId == QLatin1String("toggle_click_through") && !m_settings.hotkeys.value(actionId).isEmpty())
             continue;
