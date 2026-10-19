@@ -1,10 +1,13 @@
 #include "winplatform.h"
 
+#include "platform/hdrtonemap.h"
+
 #include <QImage>
 #include <QScreen>
+#include <vector>
 
 #include <d3d11.h>
-#include <dxgi1_2.h>
+#include <dxgi1_6.h>
 #include <wrl/client.h>
 
 using Microsoft::WRL::ComPtr;
@@ -16,11 +19,59 @@ struct DxgiScreenCapturer::Output {
     ComPtr<IDXGIOutputDuplication> duplication;
     ComPtr<ID3D11Texture2D> staging;
     QImage lastFrame;
+    // 开了 HDR 的显示器：按半精度浮点的 scRGB 复制，再转成 sRGB（否则系统给的 8 位画面发白、过曝）
+    bool hdr = false;
+    float whiteScale = 0; // 上次生成查找表时的“SDR 内容亮度”倍数
+    std::vector<uint8_t> lut;
 };
 
 namespace {
 
 using OutputPtr = std::unique_ptr<DxgiScreenCapturer::Output>;
+
+// 这块显示器的“SDR 内容亮度”相对 80 尼特的倍数；取不到时按 1（不提亮）
+float sdrWhiteScale(HMONITOR monitor)
+{
+    MONITORINFOEXW mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(monitor, &mi))
+        return 1.0f;
+    UINT32 pathCount = 0, modeCount = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS)
+        return 1.0f;
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+    if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr) != ERROR_SUCCESS)
+        return 1.0f;
+    for (UINT32 i = 0; i < pathCount; ++i) {
+        const DISPLAYCONFIG_PATH_INFO& path = paths[i];
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME source{};
+        source.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        source.header.size = sizeof(source);
+        source.header.adapterId = path.sourceInfo.adapterId;
+        source.header.id = path.sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS || wcscmp(source.viewGdiDeviceName, mi.szDevice) != 0)
+            continue;
+        DISPLAYCONFIG_SDR_WHITE_LEVEL white{};
+        white.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+        white.header.size = sizeof(white);
+        white.header.adapterId = path.targetInfo.adapterId;
+        white.header.id = path.targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&white.header) == ERROR_SUCCESS && white.SDRWhiteLevel > 0)
+            return float(white.SDRWhiteLevel) / 1000.0f; // 1000 表示 80 尼特
+        break;
+    }
+    return 1.0f;
+}
+
+// 显示器当前是否开着 HDR（桌面按 HDR10 色彩空间输出）
+bool isHdrOutput(IDXGIOutput* output)
+{
+    ComPtr<IDXGIOutput6> output6;
+    DXGI_OUTPUT_DESC1 desc{};
+    return SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&output6))) && SUCCEEDED(output6->GetDesc1(&desc))
+           && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+}
 
 // 为指定显示器创建复制会话；旋转屏幕暂不支持（交给 GDI）
 bool createDuplication(HMONITOR monitor, DxgiScreenCapturer::Output& out)
@@ -45,8 +96,14 @@ bool createDuplication(HMONITOR monitor, DxgiScreenCapturer::Output& out)
             if (FAILED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, nullptr, 0,
                                          D3D11_SDK_VERSION, &out.device, nullptr, &out.context)))
                 return false;
+            // HDR 显示器要半精度浮点的画面（老接口给的 8 位画面是系统粗暴截断的，发白过曝）
+            ComPtr<IDXGIOutput5> output5;
+            if (isHdrOutput(output.Get()) && SUCCEEDED(output.As(&output5))) {
+                const DXGI_FORMAT formats[] = {DXGI_FORMAT_R16G16B16A16_FLOAT};
+                out.hdr = SUCCEEDED(output5->DuplicateOutput1(out.device.Get(), 0, 1, formats, &out.duplication));
+            }
             // 双显卡笔记本上若显示器不由该适配器驱动，这里会失败
-            if (FAILED(output1->DuplicateOutput(out.device.Get(), &out.duplication)))
+            if (!out.hdr && FAILED(output1->DuplicateOutput(out.device.Get(), &out.duplication)))
                 return false;
             out.monitor = monitor;
             return true;
@@ -117,7 +174,7 @@ QPixmap DxgiScreenCapturer::grab(QScreen* screen)
         D3D11_TEXTURE2D_DESC desc{};
         if (ok) {
             texture->GetDesc(&desc);
-            ok = desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
+            ok = desc.Format == (out->hdr ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_B8G8R8A8_UNORM);
         }
         ok = ok && info.LastPresentTime.QuadPart != 0; // 只有鼠标变化的帧不更新缓存
         if (ok && !out->staging) {
@@ -137,8 +194,18 @@ QPixmap DxgiScreenCapturer::grab(QScreen* screen)
 
         D3D11_MAPPED_SUBRESOURCE mapped{};
         if (ok && SUCCEEDED(out->context->Map(out->staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
-            out->lastFrame = QImage(static_cast<const uchar*>(mapped.pData), int(desc.Width), int(desc.Height),
-                                    int(mapped.RowPitch), QImage::Format_RGB32).copy();
+            const auto* data = static_cast<const uchar*>(mapped.pData);
+            if (out->hdr) {
+                // “SDR 内容亮度”随时可能被用户调整，每次截图都读一下，变了才重建查找表
+                const float scale = sdrWhiteScale(monitor);
+                if (scale != out->whiteScale) {
+                    out->lut = makeScRgbToSrgbLut(scale);
+                    out->whiteScale = scale;
+                }
+                out->lastFrame = scRgbToImage(data, int(desc.Width), int(desc.Height), int(mapped.RowPitch), out->lut);
+            } else {
+                out->lastFrame = QImage(data, int(desc.Width), int(desc.Height), int(mapped.RowPitch), QImage::Format_RGB32).copy();
+            }
             out->context->Unmap(out->staging.Get(), 0);
         } else if (out->lastFrame.isNull()) {
             return {};

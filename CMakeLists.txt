@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # 发布构建由 CI 根据 tag（v1.2.3）传入版本号
-set(SNAPPIN_VERSION "0.2.38" CACHE STRING "Application version")
+set(SNAPPIN_VERSION "0.2.39" CACHE STRING "Application version")
 # 自动更新从这个仓库的 GitHub Releases 获取新版本
 set(SNAPPIN_GITHUB_REPO "wangchaozhi/SnapPin" CACHE STRING "owner/repo for update checks")
 # 版本号错了自动更新会反复提示，宁可构建失败
@@ -43,6 +43,7 @@ set(CORE_SOURCES
     src/history/historystore.h src/history/historystore.cpp
     src/history/historywindow.h src/history/historywindow.cpp
     src/platform/platform.h
+    src/platform/hdrtonemap.h src/platform/hdrtonemap.cpp
     src/annotation/shapes.h src/annotation/shapes.cpp
     src/annotation/annotationdoc.h src/annotation/annotationdoc.cpp
     src/annotation/tools.h src/annotation/tools.cpp
@@ -262,6 +263,10 @@ if(SNAPPIN_BUILD_TESTS)
     target_include_directories(imageregions_test PRIVATE src)
     target_link_libraries(imageregions_test PRIVATE Qt6::Gui)
     add_test(NAME imageregions COMMAND imageregions_test)
+    qt_add_executable(hdrtonemap_test tests/hdrtonemap_test.cpp src/platform/hdrtonemap.cpp)
+    target_include_directories(hdrtonemap_test PRIVATE src)
+    target_link_libraries(hdrtonemap_test PRIVATE Qt6::Gui)
+    add_test(NAME hdrtonemap COMMAND hdrtonemap_test)
     qt_add_executable(ocrtext_test tests/ocrtext_test.cpp src/ocr/ocrtext.cpp)
     target_include_directories(ocrtext_test PRIVATE src)
     target_link_libraries(ocrtext_test PRIVATE Qt6::Gui)
